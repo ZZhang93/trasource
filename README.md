@@ -31,14 +31,14 @@ Instead of guessing which keywords to search for, describe your research topic i
 ## How It Works
 
 ```
-User Query: "How did People's Daily report on the Hundred Days No Children campaign?"
+User Query: "How did People's Daily report on the Characteristic of the 8th CPC National Congress?"
                                     │
                     ┌───────────────┴───────────────┐
                     ▼                               │
             Step 1: AI Expansion                    │
             Generates weighted keywords:            │
-            冠县 ×10, 计划生育 ×10,                  │
-            曾昭起 ×9, 百日无孩 ×8 ...               │
+            8th CPC ×10, Characteristic ×10,        │
+            Revolutionary experience ×9, ...        │
                     │                               │
                     ▼                               │
             Step 2: BM25 Search                     │
@@ -151,7 +151,7 @@ trasource/
 
 ## License
 
-MIT
+AGPL
 
 ## Contributing
 
