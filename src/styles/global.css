@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/* ============================================================
+   史料检索引擎 — 全局样式
+   Notion 风格设计语言
+   ============================================================ */
+
+@layer base {
+  :root {
+    --bg:          #FFFFFF;
+    --sidebar-bg:  #F7F6F3;
+    --accent:      #2383E2;
+    --accent-hover:#1a6fc4;
+    --text:        #37352F;
+    --text-muted:  #9B9A97;
+    --border:      #E9E9E7;
+    --hover-bg:    #EFEFEF;
+
+    --font-ui:     -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-serif:  "Noto Serif SC", "Source Han Serif CN", "STSong", serif;
+    --font-mono:   "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+    --radius-sm:   4px;
+    --radius:      6px;
+    --radius-md:   8px;
+    --radius-lg:   12px;
+
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.06);
+    --shadow:      0 1px 3px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+    --shadow-lg:   0 4px 24px rgba(0,0,0,0.12);
+
+    --transition:  150ms ease-out;
+  }
+
+  .dark {
+    --bg:          #191919;
+    --sidebar-bg:  #202020;
+    --text:        #E6E6E5;
+    --text-muted:  #7A7A79;
+    --border:      #2F2F2F;
+    --hover-bg:    #2B2B2B;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body, #app {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  p, span, div[data-selectable], .selectable, textarea, input {
+    user-select: text;
+  }
+}
+
+/* ── Shared Button Styles (no @apply nesting) ── */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: var(--accent);
+  color: white;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--transition), opacity var(--transition);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  transition: background var(--transition);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--hover-bg); }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Input ── */
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.15);
+}
+
+/* ── Sidebar Item ── */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  text-align: left;
+  transition: background var(--transition);
+  width: 100%;
+}
+.sidebar-item:hover { background: var(--hover-bg); }
+.sidebar-item.active {
+  background: var(--hover-bg);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Typography ── */
+.excerpt-text {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text);
+}
+
+/* ── AI streaming cursor ── */
+.ai-streaming::after {
+  content: '▋';
+  animation: blink 1s step-start infinite;
+  color: var(--accent);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Utilities ── */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flex-1 { flex: 1 1 0; min-width: 0; }
+.w-full { width: 100%; }
+.text-xs { font-size: 11px; }
+.text-sm { font-size: 13px; }
+.flex { display: flex; }
+.items-center { align-items: center; }
+.justify-end { justify-content: flex-end; }
+.justify-center { justify-content: center; }
+.gap-1\.5 { gap: 6px; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mt-2 { margin-top: 8px; }
+.p-1 { padding: 4px; }
+.rounded { border-radius: var(--radius); }
+.cursor-pointer { cursor: pointer; }
+.font-semibold { font-weight: 600; }
