@@ -25,7 +25,7 @@ where
 {
     match config.provider.as_str() {
         "gemini" => stream_gemini(config, messages, callback).await,
-        "openai" | "kimi" | "openai_compatible" => stream_openai(config, messages, callback).await,
+        "openai" | "kimi" | "deepseek" | "openai_compatible" => stream_openai(config, messages, callback).await,
         "claude" => stream_claude(config, messages, callback).await,
         _ => Err(format!("Unknown provider: {}", config.provider)),
     }
@@ -104,6 +104,8 @@ where
     let base_url = config.base_url.unwrap_or_else(|| {
         if config.provider == "kimi" {
             "https://api.moonshot.cn/v1".to_string()
+        } else if config.provider == "deepseek" {
+            "https://api.deepseek.com".to_string()
         } else {
             "https://api.openai.com/v1".to_string()
         }

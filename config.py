@@ -43,6 +43,12 @@ AVAILABLE_MODELS = {
         "Moonshot v1 32K":  "moonshot-v1-32k",
         "Moonshot v1 128K": "moonshot-v1-128k",
     },
+    "deepseek": {
+        "DeepSeek V4 Flash":          "deepseek-v4-flash",
+        "DeepSeek V4 Pro":            "deepseek-v4-pro",
+        "DeepSeek Chat (Legacy)":     "deepseek-chat",
+        "DeepSeek Reasoner (Legacy)": "deepseek-reasoner",
+    },
 }
 
 # Provider 显示名
@@ -51,6 +57,7 @@ PROVIDER_LABELS = {
     "claude": "Claude (Anthropic)",
     "openai": "ChatGPT (OpenAI)",
     "kimi": "Kimi (Moonshot)",
+    "deepseek": "DeepSeek",
     "openai_compatible": "Local Model (Ollama / vLLM)",
 }
 

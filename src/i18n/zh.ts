@@ -66,6 +66,7 @@ export default {
   'settings.providerClaude': 'Claude (Anthropic)',
   'settings.providerOpenAI': 'ChatGPT (OpenAI)',
   'settings.providerKimi': 'Kimi (Moonshot)',
+  'settings.providerDeepSeek': 'DeepSeek',
   'settings.providerLocal': '本地模型 (Ollama / vLLM)',
 
   // API Key
@@ -73,6 +74,7 @@ export default {
   'settings.claudeApiKey': 'Claude API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
   'settings.kimiApiKey': 'Kimi API Key',
+  'settings.deepseekApiKey': 'DeepSeek API Key',
   'settings.apiKeyHint': 'API Key 仅存储在本地，不会上传到任何服务器',
   'settings.apiKeyLocalHint': 'API Key 仅存储在本地',
   'settings.showKey': '显示',
@@ -81,6 +83,12 @@ export default {
   // Models
   'settings.expansionModelLabel': '🔍 AI 关键词分析模型',
   'settings.extractionModelLabel': '📄 AI 史料摘录模型',
+  'settings.refreshModels': '刷新模型列表',
+  'settings.refreshingModels': '刷新中…',
+  'settings.refreshModelsHint': '从当前服务商在线拉取可用模型；失败时继续使用内置兜底列表。',
+  'settings.refreshModelsSuccess': '已拉取 {count} 个模型',
+  'settings.refreshModelsFallback': '拉取失败，已使用内置列表：{error}',
+  'settings.refreshModelsFailed': '模型列表拉取失败',
 
   // Local model
   'settings.localBaseUrl': 'Base URL',
@@ -112,7 +120,7 @@ export default {
 
   // About
   'settings.aboutTitle': '史料检索引擎',
-  'settings.aboutVersion': '版本 1.07',
+  'settings.aboutVersion': '版本 1.2.0',
   'settings.aboutDesc': '基于 AI 的历史文献全文检索与摘录工具。',
   'settings.aboutDescLine2': '支持报纸、书籍、访谈等多种文献格式。',
   'settings.aboutFrontend': '前端框架',
@@ -120,7 +128,7 @@ export default {
   'settings.aboutBackend': '后端框架',
   'settings.aboutDatabase': '数据库',
   'settings.aboutAIModel': 'AI 模型',
-  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Kimi / 本地模型',
+  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Kimi / DeepSeek / 本地模型',
 
   // Language
   'settings.language': '界面语言',
@@ -217,6 +225,7 @@ export default {
   'search.langMixed': '中英混合',
   'search.aiAnalyzing': 'AI分析…',
   'search.searching': '搜索中…',
+  'search.extracting': '摘录中…',
   'search.searchBtn': '检索',
   'search.advancedOptions': '高级选项',
   'search.dateRange': '日期范围',

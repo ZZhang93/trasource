@@ -68,6 +68,10 @@ export const useSearchStore = defineStore('search', () => {
   const pageSize = ref(20)
 
   function reset() {
+    isExpanding.value = false
+    isSearching.value = false
+    isExtracting.value = false
+    isChatStreaming.value = false
     expansion.value = null
     records.value = []
     totalFound.value = 0

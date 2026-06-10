@@ -16,9 +16,9 @@
       <button
         class="btn-primary"
         @click="$emit('search')"
-        :disabled="!searchStore.query.trim() || searchStore.isExpanding || searchStore.isSearching"
+        :disabled="!searchStore.query.trim() || searchStore.isExpanding || searchStore.isSearching || searchStore.isExtracting"
       >
-        {{ searchStore.isExpanding ? t('search.aiAnalyzing') : searchStore.isSearching ? t('search.searching') : t('search.searchBtn') }}
+        {{ searchStore.isExpanding ? t('search.aiAnalyzing') : searchStore.isSearching ? t('search.searching') : searchStore.isExtracting ? t('search.extracting') : t('search.searchBtn') }}
       </button>
     </div>
 
@@ -113,6 +113,15 @@ async function loadAvailableFiles() {
   }
 }
 
+async function loadSearchSettings() {
+  try {
+    const settings = await invoke<any>('get_settings')
+    if (typeof settings.top_k === 'number') {
+      searchStore.topK = settings.top_k
+    }
+  } catch {}
+}
+
 function closeFileDropdownOnOutside() { showFileDropdown.value = false }
 function toggleFileDropdown() { showFileDropdown.value = !showFileDropdown.value }
 function toggleFileFilter(filename: string) {
@@ -128,10 +137,13 @@ function collapseAdvanced() { showAdvanced.value = false }
 
 onMounted(() => {
   loadAvailableFiles()
+  loadSearchSettings()
   document.addEventListener('click', closeFileDropdownOnOutside)
+  window.addEventListener('settings-updated', loadSearchSettings)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeFileDropdownOnOutside)
+  window.removeEventListener('settings-updated', loadSearchSettings)
 })
 
 defineExpose({ loadAvailableFiles, collapseAdvanced })

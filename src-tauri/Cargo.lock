@@ -5631,7 +5631,7 @@ dependencies = [
 
 [[package]]
 name = "trasource"
-version = "1.0.7"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "duckdb",

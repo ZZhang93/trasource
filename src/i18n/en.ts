@@ -66,6 +66,7 @@ export default {
   'settings.providerClaude': 'Claude (Anthropic)',
   'settings.providerOpenAI': 'ChatGPT (OpenAI)',
   'settings.providerKimi': 'Kimi (Moonshot)',
+  'settings.providerDeepSeek': 'DeepSeek',
   'settings.providerLocal': 'Local Model (Ollama / vLLM)',
 
   // API Key
@@ -73,6 +74,7 @@ export default {
   'settings.claudeApiKey': 'Claude API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
   'settings.kimiApiKey': 'Kimi API Key',
+  'settings.deepseekApiKey': 'DeepSeek API Key',
   'settings.apiKeyHint': 'API Key is stored locally only and never uploaded to any server',
   'settings.apiKeyLocalHint': 'API Key is stored locally',
   'settings.showKey': 'Show',
@@ -81,6 +83,12 @@ export default {
   // Models
   'settings.expansionModelLabel': 'Keyword Analysis Model',
   'settings.extractionModelLabel': 'Document Extraction Model',
+  'settings.refreshModels': 'Refresh Models',
+  'settings.refreshingModels': 'Refreshing...',
+  'settings.refreshModelsHint': 'Fetch available models from the current provider. Falls back to the built-in list if it fails.',
+  'settings.refreshModelsSuccess': 'Fetched {count} models',
+  'settings.refreshModelsFallback': 'Fetch failed; using built-in list: {error}',
+  'settings.refreshModelsFailed': 'Failed to fetch model list',
 
   // Local model
   'settings.localBaseUrl': 'Base URL',
@@ -112,7 +120,7 @@ export default {
 
   // About
   'settings.aboutTitle': 'Historical Document Search Engine',
-  'settings.aboutVersion': 'Version 1.07',
+  'settings.aboutVersion': 'Version 1.2.0',
   'settings.aboutDesc': 'AI-powered full-text search and extraction tool for historical documents.',
   'settings.aboutDescLine2': 'Supports newspapers, books, interviews, and more.',
   'settings.aboutFrontend': 'Frontend Framework',
@@ -120,7 +128,7 @@ export default {
   'settings.aboutBackend': 'Backend Framework',
   'settings.aboutDatabase': 'Database',
   'settings.aboutAIModel': 'AI Models',
-  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Kimi / Local Models',
+  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Kimi / DeepSeek / Local Models',
 
   // Language
   'settings.language': 'Language',
@@ -217,6 +225,7 @@ export default {
   'search.langMixed': 'Mixed',
   'search.aiAnalyzing': 'AI Analyzing...',
   'search.searching': 'Searching...',
+  'search.extracting': 'Extracting...',
   'search.searchBtn': 'Search',
   'search.advancedOptions': 'Advanced Options',
   'search.dateRange': 'Date Range',

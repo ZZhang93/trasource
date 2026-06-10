@@ -37,6 +37,8 @@ function getProviderLabel(p: string): string {
     gemini: 'Gemini',
     claude: 'Claude',
     openai: 'ChatGPT',
+    kimi: 'Kimi',
+    deepseek: 'DeepSeek',
   }
   if (p === 'openai_compatible') return t('status.localModel')
   return STATIC[p] || p
@@ -60,6 +62,13 @@ function getModelLabel(provider: string, modelId: string): string {
     'gpt-4.1-mini': '4.1 Mini',
     'gpt-4.1-nano': '4.1 Nano',
     'o3-mini': 'o3 Mini',
+    'moonshot-v1-8k': 'v1 8K',
+    'moonshot-v1-32k': 'v1 32K',
+    'moonshot-v1-128k': 'v1 128K',
+    'deepseek-v4-flash': 'V4 Flash',
+    'deepseek-v4-pro': 'V4 Pro',
+    'deepseek-chat': 'Chat',
+    'deepseek-reasoner': 'Reasoner',
   }
   return SHORT[modelId] || modelId
 }
@@ -69,6 +78,8 @@ function getExpansionModel(settings: any): string {
   if (p === 'gemini') return settings?.gemini_expansion_model || 'gemini-3-flash-preview'
   if (p === 'claude') return settings?.claude_expansion_model || 'claude-sonnet-4-6'
   if (p === 'openai') return settings?.openai_expansion_model || 'gpt-4o'
+  if (p === 'kimi') return settings?.kimi_expansion_model || 'moonshot-v1-8k'
+  if (p === 'deepseek') return settings?.deepseek_expansion_model || 'deepseek-v4-flash'
   if (p === 'openai_compatible') return settings?.local_expansion_model || settings?.local_model || ''
   return ''
 }
@@ -78,6 +89,8 @@ function getExtractionModel(settings: any): string {
   if (p === 'gemini') return settings?.gemini_extraction_model || 'gemini-3-flash-preview'
   if (p === 'claude') return settings?.claude_extraction_model || 'claude-sonnet-4-6'
   if (p === 'openai') return settings?.openai_extraction_model || 'gpt-4o'
+  if (p === 'kimi') return settings?.kimi_extraction_model || 'moonshot-v1-8k'
+  if (p === 'deepseek') return settings?.deepseek_extraction_model || 'deepseek-v4-flash'
   if (p === 'openai_compatible') return settings?.local_extraction_model || settings?.local_model || ''
   return ''
 }

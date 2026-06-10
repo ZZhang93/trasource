@@ -120,35 +120,104 @@ fn format_citation(rec: &SearchRecord) -> String {
     }
 }
 
+fn escape_like_token(token: &str) -> String {
+    token
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 // ──────────────────────────────────────────────
 // Settings Commands
 // ──────────────────────────────────────────────
 
-#[tauri::command]
-fn get_settings(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let path = get_settings_path(&app_handle);
+fn api_key_fields() -> [&'static str; 6] {
+    [
+        "gemini_api_key",
+        "claude_api_key",
+        "openai_api_key",
+        "kimi_api_key",
+        "deepseek_api_key",
+        "local_api_key",
+    ]
+}
+
+fn default_settings_map() -> serde_json::Map<String, serde_json::Value> {
+    let defaults = serde_json::json!({
+        "provider": "gemini",
+        "gemini_model": "gemini-3-flash-preview",
+        "gemini_expansion_model": "gemini-3-flash-preview",
+        "gemini_extraction_model": "gemini-3-flash-preview",
+        "claude_model": "claude-sonnet-4-6",
+        "claude_expansion_model": "claude-haiku-4-5-20251001",
+        "claude_extraction_model": "claude-sonnet-4-6",
+        "openai_model": "gpt-4o",
+        "openai_expansion_model": "gpt-4o-mini",
+        "openai_extraction_model": "gpt-4o",
+        "kimi_model": "moonshot-v1-8k",
+        "kimi_expansion_model": "moonshot-v1-8k",
+        "kimi_extraction_model": "moonshot-v1-8k",
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_expansion_model": "deepseek-v4-flash",
+        "deepseek_extraction_model": "deepseek-v4-flash",
+        "local_base_url": "http://localhost:11434/v1",
+        "local_model": "",
+        "local_expansion_model": "",
+        "local_extraction_model": "",
+        "proxy_url": "",
+        "top_k": 50
+    });
+
+    if let serde_json::Value::Object(map) = defaults {
+        map
+    } else {
+        serde_json::Map::new()
+    }
+}
+
+fn load_settings_map(app_handle: &tauri::AppHandle) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let path = get_settings_path(app_handle);
     let mut settings_map = if path.exists() {
         let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content).unwrap_or_default()
     } else { serde_json::Map::new() };
 
-    let defaults = serde_json::json!({
-        "provider": "gemini", "gemini_model": "gemini-3-flash-preview", "gemini_expansion_model": "gemini-3-flash-preview",
-        "gemini_extraction_model": "gemini-3-flash-preview", "claude_model": "claude-sonnet-4-6", "openai_model": "gpt-4o", "top_k": 50
-    });
-
-    if let serde_json::Value::Object(default_map) = defaults {
-        for (k, v) in default_map { if !settings_map.contains_key(&k) { settings_map.insert(k, v); } }
+    for (k, v) in default_settings_map() {
+        if !settings_map.contains_key(&k) {
+            settings_map.insert(k, v);
+        }
     }
 
-    let keys_to_mask = ["gemini_api_key", "claude_api_key", "openai_api_key", "kimi_api_key", "local_api_key"];
-    for key in keys_to_mask {
-        if let Some(val) = settings_map.get(key) {
-            if let Some(s) = val.as_str() {
-                let masked = if s.len() > 8 { format!("{}••••••••", &s[..8]) } else if !s.is_empty() { "••••••••".to_string() } else { "".to_string() };
-                settings_map.insert(format!("{}_masked", key), serde_json::Value::String(masked));
-            }
+    Ok(settings_map)
+}
+
+fn load_settings_value(app_handle: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    Ok(serde_json::Value::Object(load_settings_map(app_handle)?))
+}
+
+fn mask_key(value: &str) -> String {
+    if value.len() > 8 {
+        format!("{}••••••••", &value[..8])
+    } else if !value.is_empty() {
+        "••••••••".to_string()
+    } else {
+        "".to_string()
+    }
+}
+
+#[tauri::command]
+fn get_settings(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let mut settings_map = load_settings_map(&app_handle)?;
+
+    for key in api_key_fields() {
+        let masked = settings_map
+            .get(key)
+            .and_then(|val| val.as_str())
+            .map(mask_key);
+        if let Some(masked_value) = masked {
+            settings_map.insert(format!("{}_masked", key), serde_json::Value::String(masked_value));
         }
+        settings_map.remove(key);
     }
     Ok(serde_json::Value::Object(settings_map))
 }
@@ -158,7 +227,19 @@ fn update_settings(app_handle: tauri::AppHandle, new_settings: serde_json::Value
     let path = get_settings_path(&app_handle);
     let data_dir = get_data_dir(&app_handle);
     if !data_dir.exists() { fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?; }
-    let content = serde_json::to_string_pretty(&new_settings).map_err(|e| e.to_string())?;
+
+    let mut settings_map = load_settings_map(&app_handle)?;
+    if let serde_json::Value::Object(new_map) = new_settings {
+        for (key, value) in new_map {
+            if !value.is_null() {
+                settings_map.insert(key, value);
+            }
+        }
+    } else {
+        return Err("设置格式无效".to_string());
+    }
+
+    let content = serde_json::to_string_pretty(&serde_json::Value::Object(settings_map)).map_err(|e| e.to_string())?;
     fs::write(path, content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -275,10 +356,11 @@ fn execute_search(
     let mut score_parts = Vec::new();
     let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
     for (token, weight) in &tokens_with_weights {
-        let pattern = format!("%{}%", token);
-        conditions.push("(title LIKE ? OR content LIKE ? OR chapter LIKE ? OR author LIKE ?)");
+        let weight = (*weight).clamp(1, 10);
+        let pattern = format!("%{}%", escape_like_token(token));
+        conditions.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR chapter LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\')");
         for _ in 0..4 { params.push(Box::new(pattern.clone())); }
-        score_parts.push(format!("(CASE WHEN title LIKE ? THEN {} ELSE 0 END + CASE WHEN chapter LIKE ? THEN {} ELSE 0 END + CASE WHEN content LIKE ? THEN {} ELSE 0 END)", weight * 3, weight * 2, weight * 1));
+        score_parts.push(format!("(CASE WHEN title LIKE ? ESCAPE '\\' THEN {} ELSE 0 END + CASE WHEN chapter LIKE ? ESCAPE '\\' THEN {} ELSE 0 END + CASE WHEN content LIKE ? ESCAPE '\\' THEN {} ELSE 0 END)", weight * 3, weight * 2, weight));
         for _ in 0..3 { params.push(Box::new(pattern.clone())); }
     }
     let sql = format!("SELECT id, source_file, file_type, doc_type, year, date, page, title, author, pub_year, publisher, chapter, section, page_num, interviewee, interview_date, interview_location, content, ({}) AS relevance_score FROM documents WHERE ({}) {} ORDER BY relevance_score DESC LIMIT 5000",
@@ -320,6 +402,7 @@ fn get_expansion_model_name(settings: &serde_json::Value) -> String {
         "claude" => settings["claude_expansion_model"].as_str().or(settings["claude_model"].as_str()).unwrap_or("claude-sonnet-4-6").to_string(),
         "openai" => settings["openai_expansion_model"].as_str().or(settings["openai_model"].as_str()).unwrap_or("gpt-4o").to_string(),
         "kimi" => settings["kimi_expansion_model"].as_str().or(settings["kimi_model"].as_str()).unwrap_or("moonshot-v1-8k").to_string(),
+        "deepseek" => settings["deepseek_expansion_model"].as_str().or(settings["deepseek_model"].as_str()).unwrap_or("deepseek-v4-flash").to_string(),
         "openai_compatible" => settings["local_expansion_model"].as_str().or(settings["local_model"].as_str()).unwrap_or("").to_string(),
         _ => "".to_string(),
     }
@@ -332,6 +415,7 @@ fn get_extraction_model_name(settings: &serde_json::Value) -> String {
         "claude" => settings["claude_extraction_model"].as_str().or(settings["claude_model"].as_str()).unwrap_or("claude-sonnet-4-6").to_string(),
         "openai" => settings["openai_extraction_model"].as_str().or(settings["openai_model"].as_str()).unwrap_or("gpt-4o").to_string(),
         "kimi" => settings["kimi_extraction_model"].as_str().or(settings["kimi_model"].as_str()).unwrap_or("moonshot-v1-8k").to_string(),
+        "deepseek" => settings["deepseek_extraction_model"].as_str().or(settings["deepseek_model"].as_str()).unwrap_or("deepseek-v4-flash").to_string(),
         "openai_compatible" => settings["local_extraction_model"].as_str().or(settings["local_model"].as_str()).unwrap_or("").to_string(),
         _ => "".to_string(),
     }
@@ -344,6 +428,7 @@ fn get_api_key(settings: &serde_json::Value) -> String {
         "claude" => settings["claude_api_key"].as_str().unwrap_or("").to_string(),
         "openai" => settings["openai_api_key"].as_str().unwrap_or("").to_string(),
         "kimi" => settings["kimi_api_key"].as_str().unwrap_or("").to_string(),
+        "deepseek" => settings["deepseek_api_key"].as_str().unwrap_or("").to_string(),
         "openai_compatible" => settings["local_api_key"].as_str().unwrap_or("").to_string(),
         _ => "".to_string(),
     }
@@ -351,7 +436,7 @@ fn get_api_key(settings: &serde_json::Value) -> String {
 
 #[tauri::command]
 async fn llm_expand_query(app_handle: tauri::AppHandle, query: String, language: String, sources: String) -> Result<serde_json::Value, String> {
-    let settings = get_settings(app_handle.clone())?;
+    let settings = load_settings_value(&app_handle)?;
     let provider = settings["provider"].as_str().unwrap_or("gemini").to_string();
     let model = get_expansion_model_name(&settings);
     let api_key = get_api_key(&settings);
@@ -367,7 +452,7 @@ async fn llm_expand_query(app_handle: tauri::AppHandle, query: String, language:
 
 #[tauri::command]
 async fn llm_chat_stream(app_handle: tauri::AppHandle, messages: Vec<Message>, system_prompt: Option<String>, temperature: Option<f32>, is_extraction: Option<bool>) -> Result<(), String> {
-    let settings = get_settings(app_handle.clone())?;
+    let settings = load_settings_value(&app_handle)?;
     let provider = settings["provider"].as_str().unwrap_or("gemini").to_string();
     let model = if is_extraction.unwrap_or(false) { get_extraction_model_name(&settings) } else { get_extraction_model_name(&settings) };
     let api_key = get_api_key(&settings);
@@ -382,13 +467,229 @@ async fn llm_chat_stream(app_handle: tauri::AppHandle, messages: Vec<Message>, s
 // Metadata Commands
 // ──────────────────────────────────────────────
 
+fn static_model_options(provider: &str) -> Vec<serde_json::Value> {
+    match provider {
+        "gemini" => vec![
+            serde_json::json!({"label": "Gemini 2.5 Flash", "value": "gemini-2.5-flash"}),
+            serde_json::json!({"label": "Gemini 2.5 Pro", "value": "gemini-2.5-pro"}),
+            serde_json::json!({"label": "Gemini 3 Flash", "value": "gemini-3-flash-preview"}),
+            serde_json::json!({"label": "Gemini 3.1 Flash Lite Preview", "value": "gemini-3.1-flash-lite-preview"}),
+            serde_json::json!({"label": "Gemini 3.1 Pro Preview", "value": "gemini-3.1-pro-preview"}),
+        ],
+        "claude" => vec![
+            serde_json::json!({"label": "Claude Haiku 4.5", "value": "claude-haiku-4-5-20251001"}),
+            serde_json::json!({"label": "Claude Sonnet 4.6", "value": "claude-sonnet-4-6"}),
+            serde_json::json!({"label": "Claude Opus 4.6", "value": "claude-opus-4-6"}),
+        ],
+        "openai" => vec![
+            serde_json::json!({"label": "GPT-4o Mini", "value": "gpt-4o-mini"}),
+            serde_json::json!({"label": "GPT-4o", "value": "gpt-4o"}),
+            serde_json::json!({"label": "GPT-4.1", "value": "gpt-4.1"}),
+            serde_json::json!({"label": "GPT-4.1 Mini", "value": "gpt-4.1-mini"}),
+            serde_json::json!({"label": "GPT-4.1 Nano", "value": "gpt-4.1-nano"}),
+            serde_json::json!({"label": "o3 Mini", "value": "o3-mini"}),
+        ],
+        "kimi" => vec![
+            serde_json::json!({"label": "Moonshot v1 8K", "value": "moonshot-v1-8k"}),
+            serde_json::json!({"label": "Moonshot v1 32K", "value": "moonshot-v1-32k"}),
+            serde_json::json!({"label": "Moonshot v1 128K", "value": "moonshot-v1-128k"}),
+        ],
+        "deepseek" => vec![
+            serde_json::json!({"label": "DeepSeek V4 Flash", "value": "deepseek-v4-flash"}),
+            serde_json::json!({"label": "DeepSeek V4 Pro", "value": "deepseek-v4-pro"}),
+            serde_json::json!({"label": "DeepSeek Chat (Legacy)", "value": "deepseek-chat"}),
+            serde_json::json!({"label": "DeepSeek Reasoner (Legacy)", "value": "deepseek-reasoner"}),
+        ],
+        "openai_compatible" => vec![],
+        _ => vec![],
+    }
+}
+
+fn provider_options() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({"value": "gemini", "label": "Google Gemini"}),
+        serde_json::json!({"value": "claude", "label": "Claude (Anthropic)"}),
+        serde_json::json!({"value": "openai", "label": "ChatGPT (OpenAI)"}),
+        serde_json::json!({"value": "kimi", "label": "Kimi (Moonshot)"}),
+        serde_json::json!({"value": "deepseek", "label": "DeepSeek"}),
+        serde_json::json!({"value": "openai_compatible", "label": "Local Model (Ollama / vLLM)"}),
+    ]
+}
+
+fn model_label(id: &str) -> String {
+    id.replace('-', " ").replace('_', " ")
+}
+
+fn create_model_client(proxy_url: Option<&str>) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder();
+    if let Some(proxy) = proxy_url {
+        let trimmed = proxy.trim();
+        if !trimmed.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(trimmed).map_err(|e| e.to_string())?);
+        }
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+async fn fetch_gemini_models(api_key: String, proxy_url: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    if api_key.trim().is_empty() {
+        return Err("Gemini API Key 为空".to_string());
+    }
+    let client = create_model_client(proxy_url.as_deref())?;
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", api_key.trim());
+    let payload = client.get(url).send().await
+        .map_err(|e| e.to_string())?
+        .error_for_status().map_err(|e| e.to_string())?
+        .json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
+
+    let mut models = Vec::new();
+    if let Some(items) = payload["models"].as_array() {
+        for item in items {
+            let supports_generate = item["supportedGenerationMethods"].as_array()
+                .map(|methods| methods.iter().any(|m| m.as_str() == Some("generateContent")))
+                .unwrap_or(false);
+            if !supports_generate { continue; }
+            let id = item["name"].as_str().unwrap_or("").trim_start_matches("models/");
+            if id.is_empty() { continue; }
+            let label = item["displayName"].as_str().unwrap_or(id);
+            models.push(serde_json::json!({"label": label, "value": id}));
+        }
+    }
+    if models.is_empty() { Err("未返回可用模型".to_string()) } else { Ok(models) }
+}
+
+async fn fetch_claude_models(api_key: String, proxy_url: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    if api_key.trim().is_empty() {
+        return Err("Claude API Key 为空".to_string());
+    }
+    let client = create_model_client(proxy_url.as_deref())?;
+    let payload = client.get("https://api.anthropic.com/v1/models")
+        .header("x-api-key", api_key.trim())
+        .header("anthropic-version", "2023-06-01")
+        .send().await.map_err(|e| e.to_string())?
+        .error_for_status().map_err(|e| e.to_string())?
+        .json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
+
+    let mut models = Vec::new();
+    if let Some(items) = payload["data"].as_array() {
+        for item in items {
+            let id = item["id"].as_str().unwrap_or("");
+            if id.is_empty() { continue; }
+            let label = item["display_name"].as_str().unwrap_or(id);
+            models.push(serde_json::json!({"label": label, "value": id}));
+        }
+    }
+    if models.is_empty() { Err("未返回可用模型".to_string()) } else { Ok(models) }
+}
+
+async fn fetch_openai_compatible_models(
+    provider: &str,
+    api_key: String,
+    base_url: String,
+    proxy_url: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    if provider != "openai_compatible" && api_key.trim().is_empty() {
+        return Err("API Key 为空".to_string());
+    }
+    let client = create_model_client(proxy_url.as_deref())?;
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let mut req = client.get(url);
+    if !api_key.trim().is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key.trim()));
+    }
+    let payload = req.send().await
+        .map_err(|e| e.to_string())?
+        .error_for_status().map_err(|e| e.to_string())?
+        .json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
+
+    let mut models = Vec::new();
+    if let Some(items) = payload["data"].as_array() {
+        for item in items {
+            let id = item["id"].as_str()
+                .or_else(|| item["name"].as_str())
+                .unwrap_or("");
+            if id.is_empty() { continue; }
+            let label = item["display_name"].as_str()
+                .or_else(|| item["name"].as_str())
+                .unwrap_or(id);
+            let display_label = if label == id { model_label(id) } else { label.to_string() };
+            models.push(serde_json::json!({"label": display_label, "value": id}));
+        }
+    }
+    if models.is_empty() { Err("未返回可用模型".to_string()) } else { Ok(models) }
+}
+
 #[tauri::command]
 fn get_model_info() -> serde_json::Value {
     serde_json::json!({
-        "gemini": [{"label": "Gemini 3 Flash", "value": "gemini-3-flash-preview"}, {"label": "Gemini 3.1 Pro", "value": "gemini-3.1-pro-preview"}],
-        "claude": [{"label": "Claude Sonnet 4.6", "value": "claude-sonnet-4-6"}],
-        "openai": [{"label": "GPT-4o", "value": "gpt-4o"}],
-        "providers": [{"value": "gemini", "label": "Google Gemini"}, {"value": "claude", "label": "Claude"}, {"value": "openai", "label": "OpenAI"}]
+        "gemini": static_model_options("gemini"),
+        "claude": static_model_options("claude"),
+        "openai": static_model_options("openai"),
+        "kimi": static_model_options("kimi"),
+        "deepseek": static_model_options("deepseek"),
+        "openai_compatible": static_model_options("openai_compatible"),
+        "providers": provider_options()
+    })
+}
+
+#[tauri::command]
+async fn fetch_model_info(app_handle: tauri::AppHandle, request: serde_json::Value) -> Result<serde_json::Value, String> {
+    let settings = load_settings_value(&app_handle)?;
+    let provider = request["provider"].as_str().unwrap_or("gemini");
+    let request_string = |key: &str| -> String {
+        request.get(key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| settings.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()))
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let proxy_url = {
+        let value = request_string("proxy_url");
+        if value.is_empty() { None } else { Some(value) }
+    };
+    let static_models = static_model_options(provider);
+
+    let fetched = match provider {
+        "gemini" => fetch_gemini_models(request_string("gemini_api_key"), proxy_url).await,
+        "claude" => fetch_claude_models(request_string("claude_api_key"), proxy_url).await,
+        "openai" => fetch_openai_compatible_models(
+            "openai",
+            request_string("openai_api_key"),
+            "https://api.openai.com/v1".to_string(),
+            proxy_url,
+        ).await,
+        "kimi" => fetch_openai_compatible_models(
+            "kimi",
+            request_string("kimi_api_key"),
+            "https://api.moonshot.cn/v1".to_string(),
+            proxy_url,
+        ).await,
+        "deepseek" => fetch_openai_compatible_models(
+            "deepseek",
+            request_string("deepseek_api_key"),
+            "https://api.deepseek.com".to_string(),
+            proxy_url,
+        ).await,
+        "openai_compatible" => {
+            let base_url = {
+                let value = request_string("local_base_url");
+                if value.is_empty() { "http://localhost:11434/v1".to_string() } else { value }
+            };
+            fetch_openai_compatible_models(
+                "openai_compatible",
+                request_string("local_api_key"),
+                base_url,
+                proxy_url,
+            ).await
+        }
+        _ => Err("未知模型提供商".to_string()),
+    };
+
+    Ok(match fetched {
+        Ok(models) => serde_json::json!({"provider": provider, "models": models, "dynamic": true}),
+        Err(error) => serde_json::json!({"provider": provider, "models": static_models, "dynamic": false, "error": error}),
     })
 }
 
@@ -427,7 +728,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings, update_settings, list_projects, create_project, delete_project, 
-            get_project_files, execute_search, llm_expand_query, llm_chat_stream, get_model_info, get_default_prompts
+            get_project_files, execute_search, llm_expand_query, llm_chat_stream, get_model_info, fetch_model_info, get_default_prompts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

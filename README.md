@@ -12,7 +12,7 @@ Instead of guessing which keywords to search for, describe your research topic i
 - **Full-Text Search** — BM25 weighted search across your entire document library via DuckDB
 - **AI Extraction** — Streaming AI reads matched documents and extracts every relevant passage verbatim with citations
 - **Follow-up Chat** — Ask follow-up questions about extracted materials
-- **Multi-Provider AI** — Gemini, Claude, ChatGPT, or local models (Ollama / vLLM)
+- **Multi-Provider AI** — Gemini, Claude, ChatGPT, Kimi, DeepSeek, or local models (Ollama / vLLM)
 - **Note-Taking** — Markdown notes linked to projects, with auto-save
 - **Library Management** — Shared document library with per-project linking
 - **Bilingual UI** — Chinese and English interface
@@ -26,7 +26,7 @@ Instead of guessing which keywords to search for, describe your research topic i
 | Backend | Python FastAPI (bundled as sidecar binary) |
 | Document DB | DuckDB (full-text search) |
 | App DB | SQLite (notes, history, settings) |
-| AI | Google Gemini / Anthropic Claude / OpenAI / OpenAI-compatible |
+| AI | Google Gemini / Anthropic Claude / OpenAI / Kimi / DeepSeek / OpenAI-compatible |
 
 ## How It Works
 
@@ -60,7 +60,7 @@ User Query: "How did People's Daily report on the Hundred Days No Children campa
 - **Node.js** 18+
 - **Rust** toolchain ([rustup.rs](https://rustup.rs/))
 - **Python** 3.10+
-- At least one AI API key (Gemini / Claude / OpenAI) or a local model server
+- At least one AI API key (Gemini / Claude / OpenAI / Kimi / DeepSeek) or a local model server
 
 ## Getting Started
 
@@ -120,7 +120,7 @@ npm run tauri build
 
 All configuration is done through the **Settings** UI within the app:
 
-- **AI Provider** — Select Gemini, Claude, ChatGPT, or local model
+- **AI Provider** — Select Gemini, Claude, ChatGPT, Kimi, DeepSeek, or local model
 - **API Keys** — Stored locally in `settings.json`, never uploaded
 - **Model Selection** — Choose models for keyword analysis and document extraction independently
 - **Custom Prompts** — Override the AI prompts for query expansion and extraction
