@@ -20,7 +20,6 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
-import { invoke } from '@tauri-apps/api/core'
 
 const { t } = useI18n()
 
@@ -37,7 +36,6 @@ function getProviderLabel(p: string): string {
     gemini: 'Gemini',
     claude: 'Claude',
     openai: 'ChatGPT',
-    kimi: 'Kimi',
     deepseek: 'DeepSeek',
   }
   if (p === 'openai_compatible') return t('status.localModel')
@@ -62,38 +60,35 @@ function getModelLabel(provider: string, modelId: string): string {
     'gpt-4.1-mini': '4.1 Mini',
     'gpt-4.1-nano': '4.1 Nano',
     'o3-mini': 'o3 Mini',
-    'moonshot-v1-8k': 'v1 8K',
-    'moonshot-v1-32k': 'v1 32K',
-    'moonshot-v1-128k': 'v1 128K',
-    'deepseek-v4-flash': 'V4 Flash',
-    'deepseek-v4-pro': 'V4 Pro',
-    'deepseek-chat': 'Chat',
-    'deepseek-reasoner': 'Reasoner',
+    'gpt-5': '5',
+    'gpt-5-mini': '5 Mini',
+    'gpt-5.1': '5.1',
+    'claude-sonnet-5': 'Sonnet 5',
+    'claude-opus-4-8': 'Opus 4.8',
+    'deepseek-chat': 'Chat (V3)',
+    'deepseek-reasoner': 'Reasoner (R1)',
   }
   return SHORT[modelId] || modelId
 }
 
-function getExpansionModel(settings: any): string {
-  const p = settings?.provider || 'gemini'
-  if (p === 'gemini') return settings?.gemini_expansion_model || 'gemini-3-flash-preview'
-  if (p === 'claude') return settings?.claude_expansion_model || 'claude-sonnet-4-6'
-  if (p === 'openai') return settings?.openai_expansion_model || 'gpt-4o'
-  if (p === 'kimi') return settings?.kimi_expansion_model || 'moonshot-v1-8k'
-  if (p === 'deepseek') return settings?.deepseek_expansion_model || 'deepseek-v4-flash'
-  if (p === 'openai_compatible') return settings?.local_expansion_model || settings?.local_model || ''
-  return ''
+const PROVIDER_PREFIX: Record<string, string> = {
+  gemini: 'gemini', claude: 'claude', openai: 'openai',
+  deepseek: 'deepseek', openai_compatible: 'local',
+}
+const PROVIDER_DEFAULT: Record<string, string> = {
+  gemini: 'gemini-3-flash-preview', claude: 'claude-sonnet-4-6',
+  openai: 'gpt-4o', deepseek: 'deepseek-chat', openai_compatible: '',
 }
 
-function getExtractionModel(settings: any): string {
+function getRoleModel(settings: any, role: 'expansion' | 'extraction'): string {
   const p = settings?.provider || 'gemini'
-  if (p === 'gemini') return settings?.gemini_extraction_model || 'gemini-3-flash-preview'
-  if (p === 'claude') return settings?.claude_extraction_model || 'claude-sonnet-4-6'
-  if (p === 'openai') return settings?.openai_extraction_model || 'gpt-4o'
-  if (p === 'kimi') return settings?.kimi_extraction_model || 'moonshot-v1-8k'
-  if (p === 'deepseek') return settings?.deepseek_extraction_model || 'deepseek-v4-flash'
-  if (p === 'openai_compatible') return settings?.local_extraction_model || settings?.local_model || ''
-  return ''
+  const prefix = PROVIDER_PREFIX[p]
+  if (!prefix) return ''
+  return settings?.[`${prefix}_${role}_model`] || settings?.[`${prefix}_model`] || PROVIDER_DEFAULT[p]
 }
+
+function getExpansionModel(settings: any): string { return getRoleModel(settings, 'expansion') }
+function getExtractionModel(settings: any): string { return getRoleModel(settings, 'extraction') }
 
 const modelDisplay = computed(() => {
   if (expansionModelLabel.value === extractionModelLabel.value) {
@@ -126,25 +121,14 @@ onMounted(() => {
   let attempts = 0
   const MAX = 30
 
-  // 立即从 Rust 获取设置，实现瞬时显示
-  const loadSettings = async () => {
-    try {
-      const settings = await invoke<any>('get_settings')
-      updateFromSettings(settings)
-    } catch (e) {
-      console.error('Failed to load settings from Rust:', e)
-    }
-  }
-  loadSettings()
-
   const check = async () => {
     attempts++
     try {
       await api.get('/api/health')
       backendStatusKey.value = 'status.ready'
       backendOk.value = true
-      // 后端就绪后再次刷新（确保同步）
-      await loadSettings()
+      const settings = await api.get<any>('/api/settings')
+      updateFromSettings(settings)
     } catch {
       if (attempts < MAX) {
         backendStatusKey.value = 'status.starting'
@@ -160,7 +144,10 @@ onMounted(() => {
   check()
 
   const onSettingsUpdated = async () => {
-    await loadSettings()
+    try {
+      const settings = await api.get<any>('/api/settings')
+      updateFromSettings(settings)
+    } catch {}
   }
   window.addEventListener('settings-updated', onSettingsUpdated)
   onUnmounted(() => window.removeEventListener('settings-updated', onSettingsUpdated))

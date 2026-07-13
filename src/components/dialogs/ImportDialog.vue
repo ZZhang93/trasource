@@ -344,7 +344,6 @@ async function startImport() {
     const { task_id } = await api.post<{ task_id: string }>('/api/import/start', {
       project_name: props.projectName,
       file_path: filePath,
-      use_shared: true,
       doc_type: isCsv.value ? 'newspaper' : docType.value,
       title: meta.value.title || selectedFileName.value,
       author: meta.value.author,
@@ -512,8 +511,8 @@ function handleDone() {
   transition: all 150ms;
   font-size: 13px;
 }
-.radio-item:hover { border-color: var(--accent); background: #f0f7ff; }
-.radio-item.selected { border-color: var(--accent); background: #EBF4FF; }
+.radio-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+.radio-item.selected { border-color: var(--accent); background: var(--accent-soft); }
 .radio-item em { color: var(--text-muted); font-style: normal; font-size: 12px; }
 .radio-dot {
   width: 14px; height: 14px;
@@ -575,10 +574,10 @@ function handleDone() {
   font-size: 12px; cursor: pointer;
   transition: all 150ms; color: var(--text);
 }
-.type-btn:hover { border-color: var(--accent); background: #f0f7ff; }
+.type-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 .type-btn.active {
   border-color: var(--accent);
-  background: #EBF4FF;
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 500;
 }

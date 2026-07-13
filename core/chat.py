@@ -6,6 +6,7 @@
 import logging
 from config import SETTINGS_FILE
 from core.settings_manager import load_settings
+from core.llm import LLMError, classify_llm_error
 from core.llm_provider import create_provider, get_extraction_model
 
 logger = logging.getLogger(__name__)
@@ -31,19 +32,6 @@ You can:
 5. Translate or explain archaic/specialized terms
 Base your discussion strictly on the provided excerpts, clearly distinguishing between quoted text and your analytical inferences.
 If the excerpts don't contain enough information to answer a question, say so directly."""
-
-
-def build_chat_context(selected_records: list) -> str:
-    """将选中的记录格式化为对话上下文。"""
-    if not selected_records:
-        return ""
-    from core.retriever import format_citation
-    parts = []
-    for i, rec in enumerate(selected_records, 1):
-        citation = format_citation(rec)
-        content = rec.get("content", "")
-        parts.append(f"【文献 {i}】{citation}\n{content}")
-    return "\n\n" + ("═" * 40 + "\n\n").join(parts)
 
 
 def stream_chat(
@@ -85,4 +73,4 @@ def stream_chat(
         )
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
-        yield f"\n\n出错了：{e}"
+        raise LLMError(classify_llm_error(e, language)) from e

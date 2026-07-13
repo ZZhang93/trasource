@@ -102,94 +102,8 @@ def delete_source_file(db_path: str, filename: str) -> int:
     count = result[0] if result else 0
     conn.execute("DELETE FROM documents WHERE source_file = ?", [filename])
     conn.close()
+    logger.info(f"已删除来源文件 [{filename}] 共 {count} 条记录")
     return count
-
-
-def get_db_context_summary(db_path: str) -> str:
-    """获取数据库内容摘要（类型统计+时间跨度）"""
-    try:
-        conn = duckdb.connect(db_path)
-        type_rows = conn.execute(
-            "SELECT doc_type, COUNT(*) AS n FROM documents GROUP BY doc_type ORDER BY n DESC"
-        ).fetchall()
-        yr = conn.execute(
-            "SELECT MIN(year), MAX(year) FROM documents WHERE year != '' AND year IS NOT NULL"
-        ).fetchone()
-        conn.close()
-    except Exception:
-        return ""
-
-    type_map = {"newspaper": "报纸", "book": "书籍", "paper": "学术论文", "interview": "访谈"}
-    parts = []
-    for doc_type, n in type_rows:
-        label = type_map.get(doc_type or "", doc_type or "其他")
-        parts.append(f"{label} {n:,} 条")
-
-    yr_str = ""
-    if yr and yr[0] and yr[1]:
-        yr_str = f"，时间跨度 {yr[0]}-{yr[1]} 年"
-
-    return "、".join(parts) + yr_str
-
-
-def get_all_source_files(db_path: str) -> list:
-    """列出数据库中所有的原始文件名"""
-    conn = duckdb.connect(db_path)
-    rows = conn.execute(
-        "SELECT DISTINCT source_file FROM documents ORDER BY source_file"
-    ).fetchall()
-    conn.close()
-    return [r[0] for r in rows]
-
-
-def get_doc_type_stats(db_path: str) -> dict:
-    """统计各文档类型的记录数"""
-    conn = duckdb.connect(db_path)
-    rows = conn.execute(
-        "SELECT doc_type, COUNT(*) FROM documents GROUP BY doc_type ORDER BY doc_type"
-    ).fetchall()
-    conn.close()
-    return {(r[0] or "未分类"): r[1] for r in rows}
-
-
-def copy_records_between_dbs(src_db_path: str, dst_db_path: str, filename: str) -> int:
-    """将共享库中指定文件的所有记录复制到目标项目数据库。
-    返回值: 复制条数 / -1 表示已存在"""
-    # 先确保目标库已初始化
-    init_database(dst_db_path)
-
-    # 如果目标库中已有该文件，跳过
-    if check_file_already_imported(dst_db_path, filename):
-        logger.info(f"文件 [{filename}] 已在目标库中，跳过复制")
-        return -1
-
-    src_conn = duckdb.connect(src_db_path, read_only=True)
-    # description 必须在 fetchall() 之前访问（DB-API 规范）
-    src_conn.execute("SELECT * FROM documents WHERE source_file = ?", [filename])
-    col_names = [desc[0] for desc in src_conn.description]
-    rows = src_conn.fetchall()
-    src_conn.close()
-
-    if not rows:
-        logger.info(f"共享库中文件 [{filename}] 无记录，跳过复制")
-        return 0
-
-    # 去掉 id 列（让目标库自增）
-    id_idx = col_names.index("id") if "id" in col_names else None
-    cols_no_id = [c for c in col_names if c != "id"]
-    placeholders = ", ".join(["?" for _ in cols_no_id])
-    insert_sql = f"INSERT INTO documents ({', '.join(cols_no_id)}) VALUES ({placeholders})"
-
-    dst_conn = duckdb.connect(dst_db_path)
-    for row in rows:
-        row_list = list(row)
-        if id_idx is not None:
-            row_list.pop(id_idx)
-        dst_conn.execute(insert_sql, row_list)
-    dst_conn.close()
-
-    logger.info(f"已从共享库复制文件 [{filename}] 共 {len(rows)} 条记录到 [{dst_db_path}]")
-    return len(rows)
 
 
 # ════════════════════════════════════════════════════════════
@@ -212,11 +126,25 @@ ALL_FIELDS = [
 ]
 
 def _insert_records(conn, records: list):
+    """批量插入记录（executemany 一次提交，避免逐行事务开销）。"""
+    if not records:
+        return
     cols = ", ".join(ALL_FIELDS)
     placeholders = ", ".join(["?"] * len(ALL_FIELDS))
-    for rec in records:
-        values = [rec.get(f, "") or "" for f in ALL_FIELDS]
-        conn.execute(f"INSERT INTO documents ({cols}) VALUES ({placeholders})", values)
+    rows = [[rec.get(f, "") or "" for f in ALL_FIELDS] for rec in records]
+    conn.executemany(f"INSERT INTO documents ({cols}) VALUES ({placeholders})", rows)
+
+
+def _count_lines_fast(filepath: str) -> int:
+    """按字节块统计换行数（仅用于进度估算，比逐行迭代快一个量级）。"""
+    count = 0
+    with open(filepath, "rb") as f:
+        while True:
+            buf = f.read(8 * 1024 * 1024)
+            if not buf:
+                break
+            count += buf.count(b"\n")
+    return count
 
 
 def _make_base(meta: dict, filename: str, file_type: str) -> dict:
@@ -276,19 +204,20 @@ def ingest_csv(db_path: str, filepath: str, progress_callback=None) -> dict:
     conn = duckdb.connect(db_path)
 
     try:
-        total_rows = sum(1 for _ in open(filepath, encoding=encoding, errors="replace")) - 1
+        total_rows = max(_count_lines_fast(filepath) - 1, 1)
         chunks = pd.read_csv(
             filepath, chunksize=CHUNK_SIZE, encoding=encoding,
             encoding_errors="replace", dtype=str, on_bad_lines="skip",
         )
+        insert_cols = ", ".join(ALL_FIELDS)
         for chunk_idx, chunk in enumerate(chunks):
             chunk.columns = [c.strip() for c in chunk.columns]
             rename_map = {k: v for k, v in CSV_COLUMN_MAP.items() if k in chunk.columns}
             chunk = chunk.rename(columns=rename_map)
-            for col in ["year","date","page","title","content"]:
+            chunk = chunk.fillna("")
+            for col in ALL_FIELDS:
                 if col not in chunk.columns:
                     chunk[col] = ""
-            chunk = chunk.fillna("")
             chunk["source_file"] = os.path.basename(filepath)
             chunk["file_type"] = "csv"
             chunk["doc_type"] = "newspaper"
@@ -300,16 +229,15 @@ def ingest_csv(db_path: str, filepath: str, progress_callback=None) -> dict:
             if len(chunk) == 0:
                 continue
 
-            for row in chunk.to_dict("records"):
-                rec = {f: row.get(f, "") or "" for f in ALL_FIELDS}
-                conn.execute(
-                    f"INSERT INTO documents ({', '.join(ALL_FIELDS)}) VALUES ({', '.join(['?']*len(ALL_FIELDS))})",
-                    [rec[f] for f in ALL_FIELDS]
-                )
+            # DataFrame 整块插入（DuckDB 零拷贝读取，比逐行快两个数量级）
+            batch = chunk[ALL_FIELDS].astype(str)
+            conn.register("_csv_batch", batch)
+            conn.execute(f"INSERT INTO documents ({insert_cols}) SELECT {insert_cols} FROM _csv_batch")
+            conn.unregister("_csv_batch")
 
             total_imported += len(chunk)
             if progress_callback:
-                progress_callback(min((chunk_idx+1)*CHUNK_SIZE/max(total_rows,1),1.0), total_imported)
+                progress_callback(min((chunk_idx+1)*CHUNK_SIZE/total_rows, 1.0), total_imported)
     except Exception as e:
         logger.error(f"CSV 导入失败: {e}", exc_info=True)
         raise
@@ -352,8 +280,7 @@ def ingest_pdf(db_path: str, filepath: str, meta: dict, progress_callback=None) 
     logger.info(f"开始导入 PDF: {filepath}")
     filename = os.path.basename(filepath)
     base = _make_base(meta, filename, "pdf")
-    conn = duckdb.connect(db_path)
-    total_imported = 0
+    records = []
 
     with open(filepath, "rb") as f:
         reader = pypdf.PdfReader(f)
@@ -373,13 +300,11 @@ def ingest_pdf(db_path: str, filepath: str, meta: dict, progress_callback=None) 
                 if len(full_text) < 20:
                     continue
                 chapter, section = _parse_chapter_section(bm_title)
-                rec = {**base, "chapter": chapter, "section": section,
-                       "page_num": f"第{start_page+1}–{min(end_page,total_pages)}页",
-                       "content": full_text}
-                _insert_records(conn, [rec])
-                total_imported += 1
+                records.append({**base, "chapter": chapter, "section": section,
+                                "page_num": f"第{start_page+1}–{min(end_page,total_pages)}页",
+                                "content": full_text})
                 if progress_callback:
-                    progress_callback((i+1)/len(bookmarks), total_imported)
+                    progress_callback((i+1)/len(bookmarks), len(records))
         else:
             logger.info("PDF 无书签，按页导入")
             current_chapter = ""
@@ -390,14 +315,15 @@ def ingest_pdf(db_path: str, filepath: str, meta: dict, progress_callback=None) 
                 first_line = text.split("\n")[0].strip()
                 if _looks_like_chapter_title(first_line):
                     current_chapter = first_line
-                rec = {**base, "chapter": current_chapter, "section": "",
-                       "page_num": f"第{page_num+1}页", "content": text}
-                _insert_records(conn, [rec])
-                total_imported += 1
+                records.append({**base, "chapter": current_chapter, "section": "",
+                                "page_num": f"第{page_num+1}页", "content": text})
                 if progress_callback:
-                    progress_callback((page_num+1)/total_pages, total_imported)
+                    progress_callback((page_num+1)/total_pages, len(records))
 
+    conn = duckdb.connect(db_path)
+    _insert_records(conn, records)
     conn.close()
+    total_imported = len(records)
     logger.info(f"PDF 导入完成: {total_imported} 条")
     return {"total_imported": total_imported, "skipped": 0, "encoding": "binary"}
 
@@ -416,8 +342,7 @@ def ingest_docx(db_path: str, filepath: str, meta: dict, progress_callback=None)
     filename = os.path.basename(filepath)
     base = _make_base(meta, filename, "docx")
     doc = Document(filepath)
-    conn = duckdb.connect(db_path)
-    total_imported = 0
+    records = []
 
     sections = []
     current_h1 = ""
@@ -456,16 +381,17 @@ def ingest_docx(db_path: str, filepath: str, meta: dict, progress_callback=None)
         logger.warning("DOCX 未检测到标题样式，退回按段落导入")
         all_text = "\n\n".join(p.text.strip() for p in doc.paragraphs if p.text.strip())
         for p in [x for x in all_text.split("\n\n") if len(x.strip()) >= 20]:
-            _insert_records(conn, [{**base, "chapter":"","section":"","page_num":"","content":p}])
-            total_imported += 1
+            records.append({**base, "chapter":"","section":"","page_num":"","content":p})
     else:
         for i, (h1, h2, text) in enumerate(sections):
-            _insert_records(conn, [{**base, "chapter":h1, "section":h2, "page_num":"", "content":text}])
-            total_imported += 1
+            records.append({**base, "chapter":h1, "section":h2, "page_num":"", "content":text})
             if progress_callback:
-                progress_callback((i+1)/len(sections), total_imported)
+                progress_callback((i+1)/len(sections), len(records))
 
+    conn = duckdb.connect(db_path)
+    _insert_records(conn, records)
     conn.close()
+    total_imported = len(records)
     logger.info(f"DOCX 导入完成: {total_imported} 条")
     return {"total_imported": total_imported, "skipped": 0, "encoding": "utf-8"}
 
@@ -483,18 +409,15 @@ def ingest_txt(db_path: str, filepath: str, meta: dict, progress_callback=None) 
     with open(filepath, encoding=encoding, errors="replace") as f:
         lines = f.readlines()
 
-    conn = duckdb.connect(db_path)
-    total_imported = 0
+    records = []
     current_chapter = ""
     current_section = ""
     buffer = []
 
     def flush(ch, sec, buf):
-        nonlocal total_imported
         text = "\n".join(buf).strip()
         if len(text) >= 20:
-            _insert_records(conn, [{**base, "chapter":ch, "section":sec, "page_num":"", "content":text}])
-            total_imported += 1
+            records.append({**base, "chapter":ch, "section":sec, "page_num":"", "content":text})
 
     for line in lines:
         line_s = line.strip()
@@ -514,14 +437,16 @@ def ingest_txt(db_path: str, filepath: str, meta: dict, progress_callback=None) 
 
     flush(current_chapter, current_section, buffer)
 
-    if total_imported == 0:
+    if not records:
         with open(filepath, encoding=encoding, errors="replace") as f:
             raw = f.read()
         for p in [x.strip() for x in raw.split("\n\n") if len(x.strip()) >= 20]:
-            _insert_records(conn, [{**base, "chapter":"","section":"","page_num":"","content":p}])
-            total_imported += 1
+            records.append({**base, "chapter":"","section":"","page_num":"","content":p})
 
+    conn = duckdb.connect(db_path)
+    _insert_records(conn, records)
     conn.close()
+    total_imported = len(records)
     logger.info(f"TXT 导入完成: {total_imported} 条")
     return {"total_imported": total_imported, "skipped": 0, "encoding": encoding}
 
@@ -542,8 +467,7 @@ def ingest_epub(db_path: str, filepath: str, meta: dict, progress_callback=None)
     filename = os.path.basename(filepath)
     base = _make_base(meta, filename, "epub")
     book = epub.read_epub(filepath)
-    conn = duckdb.connect(db_path)
-    total_imported = 0
+    records = []
     items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
 
     for i, item in enumerate(items):
@@ -556,14 +480,15 @@ def ingest_epub(db_path: str, filepath: str, meta: dict, progress_callback=None)
         if len(text) < 20:
             continue
         chapter, section = _parse_chapter_section(chapter_title) if chapter_title else ("","")
-        rec = {**base, "chapter": chapter or chapter_title, "section": section,
-               "page_num": f"章节{i+1}", "content": text}
-        _insert_records(conn, [rec])
-        total_imported += 1
+        records.append({**base, "chapter": chapter or chapter_title, "section": section,
+                        "page_num": f"章节{i+1}", "content": text})
         if progress_callback:
-            progress_callback((i+1)/len(items), total_imported)
+            progress_callback((i+1)/len(items), len(records))
 
+    conn = duckdb.connect(db_path)
+    _insert_records(conn, records)
     conn.close()
+    total_imported = len(records)
     logger.info(f"EPUB 导入完成: {total_imported} 条")
     return {"total_imported": total_imported, "skipped": 0, "encoding": "utf-8"}
 

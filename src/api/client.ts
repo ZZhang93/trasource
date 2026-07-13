@@ -17,11 +17,13 @@ class ApiClient {
     method: string,
     path: string,
     body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
     const url = `${this.base}${path}`
     const opts: RequestInit = {
       method,
       headers: { 'Content-Type': 'application/json' },
+      signal,
     }
     if (body !== undefined) {
       opts.body = JSON.stringify(body)
@@ -38,8 +40,8 @@ class ApiClient {
     return this.request<T>('GET', path)
   }
 
-  post<T = unknown>(path: string, body?: unknown) {
-    return this.request<T>('POST', path, body)
+  post<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) {
+    return this.request<T>('POST', path, body, signal)
   }
 
   put<T = unknown>(path: string, body?: unknown) {
@@ -68,11 +70,13 @@ class ApiClient {
   /**
    * POST + SSE：先 POST 请求参数，然后接收 SSE 流
    * 用 fetch + ReadableStream 实现（EventSource 不支持 POST）
+   * 传入 AbortSignal 可随时取消（新搜索发起时中断旧流）
    */
   async *streamPost(
     path: string,
     body: unknown,
-  ): AsyncGenerator<{ text?: string; done?: boolean; error?: string; model?: string }> {
+    signal?: AbortSignal,
+  ): AsyncGenerator<{ text?: string; done?: boolean; error?: string; stale?: boolean; model?: string }> {
     const res = await fetch(`${this.base}${path}`, {
       method: 'POST',
       headers: {
@@ -80,6 +84,7 @@ class ApiClient {
         'Accept': 'text/event-stream',
       },
       body: JSON.stringify(body),
+      signal,
     })
 
     if (!res.ok) {
@@ -112,21 +117,6 @@ class ApiClient {
       }
     }
   }
-}
-
-/**
- * 等待后端启动就绪（轮询 /api/health）
- * @returns true 如果后端就绪，false 如果超时
- */
-export async function waitForBackend(maxRetries = 30, intervalMs = 500): Promise<boolean> {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const res = await fetch(`${BASE_URL}/api/health`)
-      if (res.ok) return true
-    } catch {}
-    await new Promise(r => setTimeout(r, intervalMs))
-  }
-  return false
 }
 
 export const api = new ApiClient(BASE_URL)

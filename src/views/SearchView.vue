@@ -46,7 +46,7 @@
           <div v-if="searchStore.totalFound > 0" class="stats-bar">
             <span v-html="t('searchView.statsHits', { count: searchStore.totalFound.toLocaleString() })"></span>
             <span>· {{ t('searchView.statsSentToAI', { count: Math.min(searchStore.topK, searchStore.totalFound) }) }}</span>
-            <span v-if="searchStore.contextText"> · {{ t('searchView.statsContext', { count: contextKw }) }}</span>
+            <span v-if="searchStore.contextChars"> · {{ t('searchView.statsContext', { count: contextKw }) }}</span>
           </div>
 
           <!-- ② 原始记录列表 -->
@@ -63,6 +63,7 @@
           <ExtractionPanel
             :ai-output="searchStore.aiOutput"
             :is-extracting="searchStore.isExtracting"
+            :extract-error="searchStore.extractError"
             :model-name="extractionModelName"
             :source-records="sourceRecords"
             @open-detail="openDetail"
@@ -93,13 +94,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useSearchStore, type SearchRecord } from '@/stores/search'
+import { useNotesStore } from '@/stores/notes'
+import { useUiStore } from '@/stores/ui'
 import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import RecordDetailDialog from '@/components/dialogs/RecordDetailDialog.vue'
 import SearchHeader from '@/components/search/SearchHeader.vue'
 import KeywordPanel from '@/components/search/KeywordPanel.vue'
@@ -110,6 +111,8 @@ import ChatPanel from '@/components/search/ChatPanel.vue'
 const { t } = useI18n()
 const projectStore = useProjectStore()
 const searchStore = useSearchStore()
+const notesStore = useNotesStore()
+const ui = useUiStore()
 
 const searchHeaderRef = ref<InstanceType<typeof SearchHeader> | null>(null)
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
@@ -117,16 +120,25 @@ const detailRecord = ref<SearchRecord | null>(null)
 const streamingReply = ref('')
 const extractionModelName = ref('')
 
-// 切换项目时自动清空
+// ── 请求取消与竞态守卫 ──
+// 新搜索会 abort 旧的流式请求；generation 防止已 abort 的回调写入新状态
+let searchAbort: AbortController | null = null
+let generation = 0
+
+onUnmounted(() => searchAbort?.abort())
+
+// 切换项目时自动清空并中断进行中的请求
 watch(() => projectStore.currentProjectName, (n, o) => {
   if (n !== o && o !== undefined) {
+    searchAbort?.abort()
+    generation++
     searchStore.reset()
     searchHeaderRef.value?.loadAvailableFiles()
   }
 })
 
 const contextKw = computed(() => {
-  const n = searchStore.contextText.length
+  const n = searchStore.contextChars
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
   return n.toLocaleString()
 })
@@ -144,60 +156,118 @@ const sourceRecords = computed<SearchRecord[]>(() => {
 })
 
 function openDetail(rec: SearchRecord) { detailRecord.value = rec }
-function onCreateNote() { detailRecord.value = null }
+
+// 从原文弹窗保存笔记（带引用信息）
+async function onCreateNote(rec: SearchRecord) {
+  const citation = [
+    rec.source_file,
+    rec.date || rec.year || rec.pub_year,
+    rec.title && rec.title !== rec.source_file ? rec.title : '',
+    rec.page || rec.page_num,
+  ].filter(Boolean).join(' / ')
+  try {
+    await notesStore.createNote({
+      title: rec.title || rec.source_file,
+      content_md: `> ${rec.content.replace(/\n/g, '\n> ')}\n\n—— ${citation}`,
+      project_name: projectStore.currentProjectName || '',
+      tags: '',
+    })
+    ui.toast(t('toast.noteCreated'), 'success')
+  } catch {
+    ui.toast(t('toast.noteCreateFailed'), 'error')
+  }
+  detailRecord.value = null
+}
+
+// ── 流式输出节流：chunk 累积后按帧写入 store，避免每个 token 触发整段重渲染 ──
+function createThrottledSink(write: (text: string) => void, intervalMs = 80) {
+  let buffer = ''
+  let timer: number | null = null
+  return {
+    push(text: string) {
+      buffer += text
+      if (timer === null) {
+        timer = window.setTimeout(() => {
+          timer = null
+          if (buffer) { write(buffer); buffer = '' }
+        }, intervalMs)
+      }
+    },
+    flush() {
+      if (timer !== null) { clearTimeout(timer); timer = null }
+      if (buffer) { write(buffer); buffer = '' }
+    },
+  }
+}
 
 // ── 主搜索流程 ──
 async function handleSearch() {
   const query = searchStore.query.trim()
   if (!query || !projectStore.currentProjectName) return
 
+  searchAbort?.abort()
+  searchAbort = new AbortController()
+  const signal = searchAbort.signal
+  const gen = ++generation
+  const active = () => gen === generation
+
   searchStore.reset()
   searchHeaderRef.value?.collapseAdvanced()
 
-  // Step 1: AI 扩展 (改用 Rust)
+  // Step 1: AI 扩展
   searchStore.isExpanding = true
   try {
-    const expansion = await invoke<any>('llm_expand_query', {
+    const expansion = await api.post<any>('/api/search/expand', {
       query, language: searchStore.language,
-      sources: projectStore.currentProject?.description || '历史文献（报纸、书籍、访谈）',
-    })
+      project_name: projectStore.currentProjectName,
+    }, signal)
+    if (!active()) return
     searchStore.expansion = expansion
-  } catch (e) {
+    if (expansion?.success === false) {
+      ui.toast(t('toast.expandFallback'), 'info')
+    }
+  } catch (e: any) {
+    if (!active()) return
     console.warn('AI扩展失败:', e)
     searchStore.expansion = { intent: '', time_range: null, terms: {}, success: false }
+    ui.toast(t('toast.expandFallback'), 'info')
   } finally {
-    searchStore.isExpanding = false
+    if (active()) searchStore.isExpanding = false
   }
 
-  // Step 2: BM25 搜索 (改用 Rust Command)
+  // Step 2: 加权检索
   searchStore.isSearching = true
   try {
     const fileFilterPayload = searchStore.fileFilter.length > 0 ? [...searchStore.fileFilter] : null
-    const result = await invoke<any>('execute_search', {
-      projectName: projectStore.currentProjectName,
-      query,
-      weightedTokens: searchStore.expansion?.success
+    const result = await api.post<any>('/api/search/execute', {
+      query, language: searchStore.language,
+      project_name: projectStore.currentProjectName,
+      weighted_tokens: searchStore.expansion?.success
         ? Object.entries(searchStore.expansion.terms).map(([t, w]) => [t, w])
         : null,
-      dateFrom: searchStore.dateFrom,
-      dateTo: searchStore.dateTo,
-      fileFilterList: fileFilterPayload,
-      topK: searchStore.topK,
-      language: searchStore.language
-    })
+      date_from: searchStore.dateFrom,
+      date_to: searchStore.dateTo,
+      file_filter_list: fileFilterPayload,
+      top_k: searchStore.topK,
+    }, signal)
+    if (!active()) return
     searchStore.records = result.records || []
-    searchStore.totalFound = result.total_found || searchStore.records.length || 0
-    searchStore.contextText = result.context || ''
+    searchStore.totalFound = result.total_found || 0
+    searchStore.searchId = result.search_id || ''
+    searchStore.contextChars = result.context_chars || 0
     searchStore.hasSearched = true
   } catch (e: any) {
-    console.error('Rust search failed:', e)
-    searchStore.searchError = e?.message || e || t('searchView.searchFailed')
+    if (!active()) return
+    searchStore.searchError = e?.message || t('searchView.searchFailed')
     searchStore.hasSearched = true
+    ui.toast(t('toast.searchFailed'), 'error')
   } finally {
-    searchStore.isSearching = false
+    if (active()) searchStore.isSearching = false
   }
 
-  // 立即保存历史记录
+  if (!active()) return
+
+  // 立即保存历史记录（检索完成后就保存，不等 AI 提取）
   let historyId: number | null = null
   try {
     const entry = await api.post<any>('/api/history', {
@@ -211,40 +281,52 @@ async function handleSearch() {
     window.dispatchEvent(new CustomEvent('history-updated'))
   } catch {}
 
-  // Step 3: AI 流式摘录 (改用 Rust)
-  if (searchStore.contextText) {
+  // Step 3: AI 流式摘录
+  if (searchStore.searchId) {
     searchStore.isExtracting = true
     searchStore.aiOutput = ''
-    
-    // 设置监听器
-    const unlistenChunk = await listen<string>('llm-chunk', (event) => {
-      searchStore.aiOutput += event.payload
-    })
-    const unlistenDone = await listen('llm-done', () => {
-      searchStore.isExtracting = false
-      searchStore.extractionDone = true
-      unlistenChunk()
-      unlistenDone()
-      
-      // 提取完成后更新历史记录
-      if (historyId) {
-        api.patch(`/api/history/${historyId}`, {
-          ai_output: searchStore.aiOutput,
-        }).then(() => window.dispatchEvent(new CustomEvent('history-updated')))
-      }
-    })
-
+    extractionModelName.value = ''
+    const sink = createThrottledSink(text => { searchStore.aiOutput += text })
     try {
-      await invoke('llm_chat_stream', {
-        messages: [{ role: 'user', content: `基于以下史料回答：\n\n${searchStore.contextText}\n\n查询：${query}` }],
-        isExtraction: true,
-      })
-    } catch (e) {
-      console.error('AI提取失败:', e)
-      searchStore.aiOutput += '\n\n' + t('searchView.extractionFailed')
-      searchStore.isExtracting = false
-      unlistenChunk()
-      unlistenDone()
+      for await (const chunk of api.streamPost('/api/search/extract', {
+        query, search_id: searchStore.searchId,
+        language: searchStore.language,
+        project_name: projectStore.currentProjectName,
+      }, signal)) {
+        if (!active()) return
+        if (chunk.model !== undefined) {
+          extractionModelName.value = chunk.model || ''
+          continue
+        }
+        if (chunk.text) sink.push(chunk.text)
+        if (chunk.error) {
+          searchStore.extractError = chunk.error
+          ui.toast(chunk.error, 'error')
+          break
+        }
+        if (chunk.done) break
+      }
+    } catch (e: any) {
+      if (!active()) return
+      if (e?.name !== 'AbortError') {
+        searchStore.extractError = t('searchView.extractionFailed')
+        ui.toast(t('searchView.extractionFailed'), 'error')
+      }
+    } finally {
+      sink.flush()
+      if (active()) {
+        searchStore.isExtracting = false
+        searchStore.extractionDone = true
+        // 提取完成后更新历史记录的 ai_output
+        if (historyId && searchStore.aiOutput) {
+          try {
+            await api.patch(`/api/history/${historyId}`, {
+              ai_output: searchStore.aiOutput,
+            })
+            window.dispatchEvent(new CustomEvent('history-updated'))
+          } catch {}
+        }
+      }
     }
   }
 }
@@ -253,42 +335,42 @@ async function handleSearch() {
 async function sendChat(text: string) {
   searchStore.chatMessages.push({ role: 'user', content: text })
   const messages = searchStore.chatMessages.map(m => ({ role: m.role, content: m.content }))
-  
-  // RAG: 如果有史料内容，拼接到当前消息中（或者发给 Rust 让其处理）
-  // 这里我们采取简单策略：在 messages 头部加一个 context
-  const ragMessages = [
-    { role: 'user', content: `以下是相关的历史文献参考：\n\n${searchStore.contextText}\n\n请基于以上内容回答我的问题。` },
-    ...messages
-  ]
-
   searchStore.isChatStreaming = true
   streamingReply.value = ''
-
-  const unlistenChunk = await listen<string>('llm-chunk', (event) => {
-    streamingReply.value += event.payload
+  const sink = createThrottledSink(chunk => {
+    streamingReply.value += chunk
     chatPanelRef.value?.scrollToBottom()
   })
-  
-  const unlistenDone = await listen('llm-done', () => {
-    searchStore.chatMessages.push({ role: 'assistant', content: streamingReply.value })
+  let errored = false
+  try {
+    for await (const chunk of api.streamPost('/api/chat/stream', {
+      messages, search_id: searchStore.searchId,
+      language: searchStore.language,
+      project_name: projectStore.currentProjectName,
+    })) {
+      if (chunk.text) sink.push(chunk.text)
+      if (chunk.error) {
+        errored = true
+        ui.toast(chunk.error, 'error')
+        break
+      }
+      if (chunk.done) break
+    }
+    sink.flush()
+    if (streamingReply.value) {
+      searchStore.chatMessages.push({ role: 'assistant', content: streamingReply.value })
+    } else if (errored) {
+      searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
+    }
+  } catch {
+    sink.flush()
+    searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
+    ui.toast(t('chat.failed'), 'error')
+  } finally {
     searchStore.isChatStreaming = false
     streamingReply.value = ''
-    unlistenChunk()
-    unlistenDone()
-    nextTick(() => chatPanelRef.value?.scrollToBottom())
-  })
-
-  try {
-    await invoke('llm_chat_stream', {
-      messages: ragMessages,
-      temperature: 0.7,
-    })
-  } catch (e) {
-    console.error('Chat failed:', e)
-    searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
-    searchStore.isChatStreaming = false
-    unlistenChunk()
-    unlistenDone()
+    await nextTick()
+    chatPanelRef.value?.scrollToBottom()
   }
 }
 </script>

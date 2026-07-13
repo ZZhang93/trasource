@@ -1,18 +1,12 @@
 export default {
   // ── Common ──────────────────────────────────────────
   'common.cancel': 'Cancel',
-  'common.save': 'Save',
   'common.delete': 'Delete',
-  'common.confirm': 'Confirm',
   'common.loading': 'Loading...',
   'common.close': 'Close',
   'common.create': 'Create',
   'common.retry': 'Retry',
   'common.done': 'Done',
-  'common.export': 'Export',
-  'common.send': 'Send',
-  'common.copy': 'Copy',
-  'common.copied': 'Copied',
   'common.selectAll': 'Select All',
   'common.clear': 'Clear',
   'common.ok': 'OK',
@@ -65,16 +59,14 @@ export default {
   'settings.providerGemini': 'Google Gemini',
   'settings.providerClaude': 'Claude (Anthropic)',
   'settings.providerOpenAI': 'ChatGPT (OpenAI)',
-  'settings.providerKimi': 'Kimi (Moonshot)',
   'settings.providerDeepSeek': 'DeepSeek',
   'settings.providerLocal': 'Local Model (Ollama / vLLM)',
 
   // API Key
   'settings.geminiApiKey': 'Gemini API Key',
   'settings.claudeApiKey': 'Claude API Key',
-  'settings.openaiApiKey': 'OpenAI API Key',
-  'settings.kimiApiKey': 'Kimi API Key',
   'settings.deepseekApiKey': 'DeepSeek API Key',
+  'settings.openaiApiKey': 'OpenAI API Key',
   'settings.apiKeyHint': 'API Key is stored locally only and never uploaded to any server',
   'settings.apiKeyLocalHint': 'API Key is stored locally',
   'settings.showKey': 'Show',
@@ -83,12 +75,6 @@ export default {
   // Models
   'settings.expansionModelLabel': 'Keyword Analysis Model',
   'settings.extractionModelLabel': 'Document Extraction Model',
-  'settings.refreshModels': 'Refresh Models',
-  'settings.refreshingModels': 'Refreshing...',
-  'settings.refreshModelsHint': 'Fetch available models from the current provider. Falls back to the built-in list if it fails.',
-  'settings.refreshModelsSuccess': 'Fetched {count} models',
-  'settings.refreshModelsFallback': 'Fetch failed; using built-in list: {error}',
-  'settings.refreshModelsFailed': 'Failed to fetch model list',
 
   // Local model
   'settings.localBaseUrl': 'Base URL',
@@ -120,7 +106,7 @@ export default {
 
   // About
   'settings.aboutTitle': 'Historical Document Search Engine',
-  'settings.aboutVersion': 'Version 1.2.0',
+  'settings.aboutVersion': 'Version {version}',
   'settings.aboutDesc': 'AI-powered full-text search and extraction tool for historical documents.',
   'settings.aboutDescLine2': 'Supports newspapers, books, interviews, and more.',
   'settings.aboutFrontend': 'Frontend Framework',
@@ -128,7 +114,7 @@ export default {
   'settings.aboutBackend': 'Backend Framework',
   'settings.aboutDatabase': 'Database',
   'settings.aboutAIModel': 'AI Models',
-  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Kimi / DeepSeek / Local Models',
+  'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Local Models',
 
   // Language
   'settings.language': 'Language',
@@ -213,7 +199,7 @@ export default {
   'detail.document': 'Document',
   'detail.year': '{year}',
   'detail.page': 'Page {page}',
-  'detail.relevanceScore': 'Relevance {score}%',
+  'detail.relevanceScore': 'Relevance {score}',
   'detail.copyOriginal': 'Copy Original',
   'detail.copied': 'Copied',
   'detail.createNote': 'Create Note',
@@ -225,7 +211,6 @@ export default {
   'search.langMixed': 'Mixed',
   'search.aiAnalyzing': 'AI Analyzing...',
   'search.searching': 'Searching...',
-  'search.extracting': 'Extracting...',
   'search.searchBtn': 'Search',
   'search.advancedOptions': 'Advanced Options',
   'search.dateRange': 'Date Range',
@@ -306,7 +291,9 @@ export default {
   'notes.selectOrCreate': 'Select a note from the left, or create a new one',
   'notes.newNoteBtn': 'New Note',
   'notes.autoSaved': 'Auto-saved',
-  'notes.confirmDelete': 'Are you sure you want to delete the note "{title}"? This action cannot be undone.',
+  'notes.saveFailed': 'Failed to save note',
+  'notes.deleted': 'Note deleted',
+  'notes.deleteFailed': 'Failed to delete',
   'notes.defaultTitle': 'New Note',
 
   // Time formatting
@@ -314,12 +301,19 @@ export default {
   'notes.minutesAgo': '{n} minutes ago',
   'notes.hoursAgo': '{n} hours ago',
 
-  // ── History View ────────────────────────────────────
-  'history.placeholder': 'Search history will be implemented in Phase 4',
+  // ── Toast / Detail ───────────────────────────────────
+  'toast.noteCreated': 'Saved as note',
+  'toast.noteCreateFailed': 'Failed to save note',
+  'toast.expandFallback': 'AI keyword expansion failed; fell back to local tokenizer',
+  'settings.fetchModels': 'Fetch latest models',
+  'settings.fetchingModels': 'Fetching…',
+  'settings.fetchModelsHint': "Pull the provider's currently available models from its official API (also auto-refreshed when Settings opens)",
+  'toast.modelsUpdated': 'Model list updated ({count} models)',
+  'toast.modelsFetchFailed': 'Failed to fetch models. Check your API key and network.',
+  'toast.searchFailed': 'Search failed, see error message',
+  'detail.loadingFull': 'Loading full text…',
 
   // ── Format helpers ──────────────────────────────────
   'format.wan': 'k',
   'format.records': 'records',
-  'format.files': 'files',
-  'format.characters': 'chars',
 } as Record<string, string>

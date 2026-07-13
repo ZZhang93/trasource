@@ -47,13 +47,11 @@
                   :type="showKey ? 'text' : 'password'"
                   class="form-input"
                   placeholder="AIzaSy…"
-                  v-bind="apiKeyInputAttrs"
                 />
                 <button class="inline-btn" @click="showKey = !showKey">
                   {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
                 </button>
               </div>
-              <p v-if="savedKeys.gemini" class="hint muted">已保存: {{ savedKeys.gemini }}</p>
               <p class="hint muted">{{ t('settings.apiKeyHint') }}</p>
             </div>
             <div class="form-group">
@@ -80,13 +78,11 @@
                   :type="showKey ? 'text' : 'password'"
                   class="form-input"
                   placeholder="sk-ant-…"
-                  v-bind="apiKeyInputAttrs"
                 />
                 <button class="inline-btn" @click="showKey = !showKey">
                   {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
                 </button>
               </div>
-              <p v-if="savedKeys.claude" class="hint muted">已保存: {{ savedKeys.claude }}</p>
               <p class="hint muted">{{ t('settings.apiKeyLocalHint') }}</p>
             </div>
             <div class="form-group">
@@ -113,13 +109,11 @@
                   :type="showKey ? 'text' : 'password'"
                   class="form-input"
                   placeholder="sk-…"
-                  v-bind="apiKeyInputAttrs"
                 />
                 <button class="inline-btn" @click="showKey = !showKey">
                   {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
                 </button>
               </div>
-              <p v-if="savedKeys.openai" class="hint muted">已保存: {{ savedKeys.openai }}</p>
               <p class="hint muted">{{ t('settings.apiKeyLocalHint') }}</p>
             </div>
             <div class="form-group">
@@ -136,39 +130,6 @@
             </div>
           </template>
 
-          <!-- Kimi -->
-          <template v-if="form.provider === 'kimi'">
-            <div class="form-group">
-              <label>{{ t('settings.kimiApiKey') }}</label>
-              <div class="input-with-btn">
-                <input
-                  v-model="form.kimi_api_key"
-                  :type="showKey ? 'text' : 'password'"
-                  class="form-input"
-                  placeholder="sk-…"
-                  v-bind="apiKeyInputAttrs"
-                />
-                <button class="inline-btn" @click="showKey = !showKey">
-                  {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
-                </button>
-              </div>
-              <p v-if="savedKeys.kimi" class="hint muted">已保存: {{ savedKeys.kimi }}</p>
-              <p class="hint muted">{{ t('settings.apiKeyLocalHint') }}</p>
-            </div>
-            <div class="form-group">
-              <label>{{ t('settings.expansionModelLabel') }}</label>
-              <select v-model="form.kimi_expansion_model" class="form-select">
-                <option v-for="m in modelLists.kimi" :key="m.value" :value="m.value">{{ m.label }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>{{ t('settings.extractionModelLabel') }}</label>
-              <select v-model="form.kimi_extraction_model" class="form-select">
-                <option v-for="m in modelLists.kimi" :key="m.value" :value="m.value">{{ m.label }}</option>
-              </select>
-            </div>
-          </template>
-
           <!-- DeepSeek -->
           <template v-if="form.provider === 'deepseek'">
             <div class="form-group">
@@ -179,13 +140,11 @@
                   :type="showKey ? 'text' : 'password'"
                   class="form-input"
                   placeholder="sk-…"
-                  v-bind="apiKeyInputAttrs"
                 />
                 <button class="inline-btn" @click="showKey = !showKey">
                   {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
                 </button>
               </div>
-              <p v-if="savedKeys.deepseek" class="hint muted">已保存: {{ savedKeys.deepseek }}</p>
               <p class="hint muted">{{ t('settings.apiKeyLocalHint') }}</p>
             </div>
             <div class="form-group">
@@ -220,9 +179,7 @@
                 :type="showKey ? 'text' : 'password'"
                 class="form-input"
                 :placeholder="t('settings.localApiKeyPlaceholder')"
-                v-bind="apiKeyInputAttrs"
               />
-              <p v-if="savedKeys.local" class="hint muted">已保存: {{ savedKeys.local }}</p>
             </div>
             <div class="form-group">
               <label>{{ t('settings.expansionModelLabel') }}</label>
@@ -243,35 +200,27 @@
               />
             </div>
             <datalist id="local-model-options">
-              <option v-for="m in modelLists.openai_compatible" :key="m.value" :value="m.value">
-                {{ m.label }}
-              </option>
+              <option v-for="m in modelLists.openai_compatible" :key="m.value" :value="m.value" />
             </datalist>
           </template>
 
-          <!-- 模型刷新 + 测试连接 + 代理 -->
-          <div class="form-group">
+          <!-- 获取最新模型 + 测试连接 -->
+          <div class="form-group action-row">
             <button
               class="btn-test"
-              :disabled="refreshingModels"
-              @click="refreshCurrentModels"
-            >{{ refreshingModels ? t('settings.refreshingModels') : t('settings.refreshModels') }}</button>
-            <p v-if="modelRefreshMessage" class="hint" :class="modelRefreshOk ? 'ok' : 'err'">
-              {{ modelRefreshMessage }}
-            </p>
-            <p class="hint muted">{{ t('settings.refreshModelsHint') }}</p>
-          </div>
-
-          <div class="form-group">
+              :disabled="fetchingModels"
+              @click="fetchModels(true)"
+            >{{ fetchingModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}</button>
             <button
               class="btn-test"
               :disabled="testing"
               @click="testConnection"
             >{{ testing ? t('settings.testing') : t('settings.testConnection') }}</button>
-            <p v-if="testResult" class="hint" :class="testResult.success ? 'ok' : 'err'">
-              {{ testResult.message }}
-            </p>
           </div>
+          <p class="hint muted fetch-hint">{{ t('settings.fetchModelsHint') }}</p>
+          <p v-if="testResult" class="hint" :class="testResult.success ? 'ok' : 'err'">
+            {{ testResult.message }}
+          </p>
 
           <div class="form-group">
             <label>{{ t('settings.proxyLabel') }}</label>
@@ -347,7 +296,7 @@
         <div v-if="activeTab === 'about'" class="about-tab">
           <div class="about-logo">📜</div>
           <h2>{{ t('settings.aboutTitle') }}</h2>
-          <p class="version">{{ t('settings.aboutVersion') }}</p>
+          <p class="version">{{ t('settings.aboutVersion', { version: appVersion }) }}</p>
           <p class="about-desc">
             {{ t('settings.aboutDesc') }}<br>
             {{ t('settings.aboutDescLine2') }}
@@ -390,12 +339,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { api } from '@/api/client'
+import { useUiStore } from '@/stores/ui'
 import { useI18n } from '@/i18n'
-import { invoke } from '@tauri-apps/api/core'
-
 
 const { t, locale, setLocale } = useI18n()
+const ui = useUiStore()
+
+// 构建时从 package.json 注入
+const appVersion = __APP_VERSION__
 
 defineEmits<{ close: [] }>()
 
@@ -409,7 +362,6 @@ const providerLabelMap: Record<string, string> = {
   gemini: 'settings.providerGemini',
   claude: 'settings.providerClaude',
   openai: 'settings.providerOpenAI',
-  kimi: 'settings.providerKimi',
   deepseek: 'settings.providerDeepSeek',
   openai_compatible: 'settings.providerLocal',
 }
@@ -444,15 +396,10 @@ const form = reactive({
   openai_expansion_model: 'gpt-4o-mini',
   openai_extraction_model: 'gpt-4o',
 
-  kimi_api_key: '',
-  kimi_model: 'moonshot-v1-8k',
-  kimi_expansion_model: 'moonshot-v1-8k',
-  kimi_extraction_model: 'moonshot-v1-8k',
-
   deepseek_api_key: '',
-  deepseek_model: 'deepseek-v4-flash',
-  deepseek_expansion_model: 'deepseek-v4-flash',
-  deepseek_extraction_model: 'deepseek-v4-flash',
+  deepseek_model: 'deepseek-chat',
+  deepseek_expansion_model: 'deepseek-chat',
+  deepseek_extraction_model: 'deepseek-chat',
 
   local_base_url: 'http://localhost:11434/v1',
   local_api_key: '',
@@ -480,7 +427,6 @@ const providers = ref<{ label: string; value: string }[]>([
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'claude', label: 'Claude (Anthropic)' },
   { value: 'openai', label: 'ChatGPT (OpenAI)' },
-  { value: 'kimi', label: 'Kimi (Moonshot)' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'openai_compatible', label: '本地模型 (Ollama / vLLM)' },
 ])
@@ -488,107 +434,135 @@ const modelLists = reactive<Record<string, ModelOption[]>>({
   gemini: [],
   claude: [],
   openai: [],
-  kimi: [],
   deepseek: [],
   openai_compatible: [],
 })
 const showKey = ref(false)
 const saving = ref(false)
 const testing = ref(false)
-const refreshingModels = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
-const modelRefreshMessage = ref('')
-const modelRefreshOk = ref(false)
-const apiKeyInputAttrs = {
-  autocomplete: 'new-password',
-  autocorrect: 'off',
-  autocapitalize: 'off',
-  spellcheck: false,
-  'data-api-key-input': 'true',
-  'data-lpignore': 'true',
-  'data-1p-ignore': 'true',
+const fetchingModels = ref(false)
+
+// ── 在线模型列表：localStorage 缓存 + 打开时自动拉取 ──
+const MODELS_CACHE_KEY = 'trasource_models_cache_v1'
+const savedKeyMask = reactive<Record<string, string>>({})   // provider → masked key（判断是否已配置）
+const autoFetched = new Set<string>()                       // 本次会话已自动拉取过的 provider
+
+const KEY_FIELD: Record<string, string> = {
+  gemini: 'gemini_api_key',
+  claude: 'claude_api_key',
+  openai: 'openai_api_key',
+  deepseek: 'deepseek_api_key',
+  openai_compatible: 'local_api_key',
 }
 
-const savedKeys = reactive({
-  gemini: '',
-  claude: '',
-  openai: '',
-  kimi: '',
-  deepseek: '',
-  local: '',
-})
+function loadCachedModels() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(MODELS_CACHE_KEY) || '{}')
+    for (const [p, entry] of Object.entries<any>(cache)) {
+      if (entry?.models?.length && p in modelLists) {
+        modelLists[p] = entry.models
+      }
+    }
+  } catch {}
+}
 
-type ApiKeyField =
-  | 'gemini_api_key'
-  | 'claude_api_key'
-  | 'openai_api_key'
-  | 'kimi_api_key'
-  | 'deepseek_api_key'
-  | 'local_api_key'
+function cacheModels(provider: string, models: ModelOption[]) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(MODELS_CACHE_KEY) || '{}')
+    cache[provider] = { models, at: Date.now() }
+    localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache))
+  } catch {}
+}
 
-const apiKeyFields: ApiKeyField[] = [
-  'gemini_api_key',
-  'claude_api_key',
-  'openai_api_key',
-  'kimi_api_key',
-  'deepseek_api_key',
-  'local_api_key',
-]
+// 应用拉取结果：当前已选中的模型若不在新列表里，保留在列表顶部（不打断用户已保存的选择）
+function applyFetchedModels(provider: string, models: ModelOption[]) {
+  const selected = [
+    (form as any)[`${provider === 'openai_compatible' ? 'local' : provider}_expansion_model`],
+    (form as any)[`${provider === 'openai_compatible' ? 'local' : provider}_extraction_model`],
+  ].filter(Boolean)
+  const values = new Set(models.map(m => m.value))
+  const keep = selected.filter(v => !values.has(v)).map(v => ({ label: v, value: v }))
+  modelLists[provider] = [...keep, ...models]
+}
 
-function clearApiKeyInputs() {
-  for (const field of apiKeyFields) {
-    form[field] = ''
+async function fetchModels(manual = false) {
+  const p = form.provider
+  fetchingModels.value = manual
+  try {
+    const payload: any = { provider: p, api_key: (form as any)[KEY_FIELD[p]] || '' }
+    if (p === 'openai_compatible') payload.base_url = form.local_base_url
+    const res = await api.post<any>('/api/settings/list-models', payload)
+    if (res.success && res.models?.length) {
+      applyFetchedModels(p, res.models)
+      cacheModels(p, res.models)
+      if (manual) ui.toast(t('toast.modelsUpdated', { count: res.models.length }), 'success')
+    } else if (manual) {
+      ui.toast(res.message || t('toast.modelsFetchFailed'), 'error')
+    }
+  } catch {
+    if (manual) ui.toast(t('toast.modelsFetchFailed'), 'error')
+  } finally {
+    fetchingModels.value = false
   }
-  document.querySelectorAll<HTMLInputElement>('[data-api-key-input]').forEach(input => {
-    if (!input.value) return
-    input.value = ''
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
 }
+
+// 切到某个 provider 时，若已配置 key 且本次会话没拉取过，静默自动拉取一次
+function autoFetchIfConfigured(p: string) {
+  if (autoFetched.has(p)) return
+  const hasKey = !!savedKeyMask[p] || !!(form as any)[KEY_FIELD[p]] || p === 'openai_compatible'
+  if (!hasKey) return
+  autoFetched.add(p)
+  fetchModels(false)
+}
+
+watch(() => form.provider, (p) => autoFetchIfConfigured(p))
 
 onMounted(async () => {
   try {
     const [settings, modelsData, prompts] = await Promise.all([
-      invoke<any>('get_settings'),
-      invoke<any>('get_model_info'),
-      invoke<any>('get_default_prompts'),
+      api.get<any>('/api/settings'),
+      api.get<any>('/api/settings/models'),
+      api.get<any>('/api/settings/default-prompts'),
     ])
 
     // Provider 列表
-    providers.value = modelsData.providers
+    providers.value = modelsData.providers || [
+      { value: 'gemini', label: 'Google Gemini' },
+      { value: 'claude', label: 'Claude (Anthropic)' },
+      { value: 'openai', label: 'ChatGPT (OpenAI)' },
+      { value: 'openai_compatible', label: '本地模型' },
+    ]
 
-    // 各家模型列表
+    // 各家模型列表（内置默认 → 本地缓存覆盖 → 自动在线拉取）
     modelLists.gemini = modelsData.gemini || []
     modelLists.claude = modelsData.claude || []
     modelLists.openai = modelsData.openai || []
-    modelLists.kimi = modelsData.kimi || []
     modelLists.deepseek = modelsData.deepseek || []
-    modelLists.openai_compatible = modelsData.openai_compatible || []
+    loadCachedModels()
 
-    // 填充表单（API Key 输入框留空，脱敏值单独显示）
+    // 填充表单
     form.provider = settings.provider || 'gemini'
 
-    savedKeys.gemini = settings.gemini_api_key_masked || ''
     form.gemini_expansion_model = settings.gemini_expansion_model || 'gemini-3-flash-preview'
     form.gemini_extraction_model = settings.gemini_extraction_model || 'gemini-3-flash-preview'
 
-    savedKeys.claude = settings.claude_api_key_masked || ''
     form.claude_expansion_model = settings.claude_expansion_model || 'claude-haiku-4-5-20251001'
     form.claude_extraction_model = settings.claude_extraction_model || 'claude-sonnet-4-6'
 
-    savedKeys.openai = settings.openai_api_key_masked || ''
     form.openai_expansion_model = settings.openai_expansion_model || 'gpt-4o-mini'
     form.openai_extraction_model = settings.openai_extraction_model || 'gpt-4o'
 
-    savedKeys.kimi = settings.kimi_api_key_masked || ''
-    form.kimi_expansion_model = settings.kimi_expansion_model || 'moonshot-v1-8k'
-    form.kimi_extraction_model = settings.kimi_extraction_model || 'moonshot-v1-8k'
+    form.deepseek_expansion_model = settings.deepseek_expansion_model || 'deepseek-chat'
+    form.deepseek_extraction_model = settings.deepseek_extraction_model || 'deepseek-chat'
 
-    savedKeys.deepseek = settings.deepseek_api_key_masked || ''
-    form.deepseek_expansion_model = settings.deepseek_expansion_model || 'deepseek-v4-flash'
-    form.deepseek_extraction_model = settings.deepseek_extraction_model || 'deepseek-v4-flash'
+    // 记录各家是否已配置 key（决定是否自动拉取模型列表）
+    savedKeyMask.gemini = settings.gemini_api_key_masked || ''
+    savedKeyMask.claude = settings.claude_api_key_masked || ''
+    savedKeyMask.openai = settings.openai_api_key_masked || ''
+    savedKeyMask.deepseek = settings.deepseek_api_key_masked || ''
+    savedKeyMask.openai_compatible = settings.local_api_key_masked || ''
 
-    savedKeys.local = settings.local_api_key_masked || ''
     form.local_base_url = settings.local_base_url || 'http://localhost:11434/v1'
     form.local_expansion_model = settings.local_expansion_model || ''
     form.local_extraction_model = settings.local_extraction_model || ''
@@ -600,105 +574,38 @@ onMounted(async () => {
     defaultPrompts.expansion = prompts.expansion_prompt || ''
     form.system_prompt_override = settings.system_prompt_override || defaultPrompts.extraction
     form.expansion_prompt_override = settings.expansion_prompt_override || defaultPrompts.expansion
-    ensureSelectedModels()
-    clearApiKeyInputs()
-    await nextTick()
-    clearApiKeyInputs()
-    window.setTimeout(clearApiKeyInputs, 100)
+
+    // 打开设置时，为当前 provider 静默拉取一次最新模型列表
+    autoFetchIfConfigured(form.provider)
   } catch (e) {
     console.error('Failed to load settings:', e)
   }
 })
 
-function actualKey(value: string): string | undefined {
-  if (value.includes('•')) return undefined
-  return value.trim() || undefined
-}
-
-function ensureModelOption(provider: string, modelId: string) {
-  if (!modelId) return
-  const list = modelLists[provider] || []
-  if (!list.some(m => m.value === modelId)) {
-    modelLists[provider] = [{ label: modelId, value: modelId }, ...list]
-  }
-}
-
-function ensureSelectedModels() {
-  ensureModelOption('gemini', form.gemini_expansion_model)
-  ensureModelOption('gemini', form.gemini_extraction_model)
-  ensureModelOption('claude', form.claude_expansion_model)
-  ensureModelOption('claude', form.claude_extraction_model)
-  ensureModelOption('openai', form.openai_expansion_model)
-  ensureModelOption('openai', form.openai_extraction_model)
-  ensureModelOption('kimi', form.kimi_expansion_model)
-  ensureModelOption('kimi', form.kimi_extraction_model)
-  ensureModelOption('deepseek', form.deepseek_expansion_model)
-  ensureModelOption('deepseek', form.deepseek_extraction_model)
-  ensureModelOption('openai_compatible', form.local_expansion_model)
-  ensureModelOption('openai_compatible', form.local_extraction_model)
-}
-
-function mergeModelList(provider: string, fetched: ModelOption[]) {
-  const merged = new Map<string, ModelOption>()
-  for (const m of fetched || []) {
-    if (m.value) merged.set(m.value, m)
-  }
-  for (const m of modelLists[provider] || []) {
-    if (m.value && !merged.has(m.value)) merged.set(m.value, m)
-  }
-  modelLists[provider] = Array.from(merged.values())
-  ensureSelectedModels()
-}
-
-function modelFetchPayload() {
-  const payload: any = {
-    provider: form.provider,
-    proxy_url: form.proxy_url.trim() || undefined,
-  }
-  if (form.provider === 'gemini') {
-    payload.gemini_api_key = actualKey(form.gemini_api_key)
-  } else if (form.provider === 'claude') {
-    payload.claude_api_key = actualKey(form.claude_api_key)
-  } else if (form.provider === 'openai') {
-    payload.openai_api_key = actualKey(form.openai_api_key)
-  } else if (form.provider === 'kimi') {
-    payload.kimi_api_key = actualKey(form.kimi_api_key)
-  } else if (form.provider === 'deepseek') {
-    payload.deepseek_api_key = actualKey(form.deepseek_api_key)
-  } else if (form.provider === 'openai_compatible') {
-    payload.local_base_url = form.local_base_url.trim()
-    payload.local_api_key = actualKey(form.local_api_key)
-  }
-  return payload
-}
-
-async function refreshCurrentModels() {
-  refreshingModels.value = true
-  modelRefreshMessage.value = ''
-  modelRefreshOk.value = false
-  try {
-    const result = await invoke<any>('fetch_model_info', { request: modelFetchPayload() })
-    mergeModelList(form.provider, result.models || [])
-    modelRefreshOk.value = !!result.dynamic
-    modelRefreshMessage.value = result.dynamic
-      ? t('settings.refreshModelsSuccess', { count: (result.models || []).length })
-      : t('settings.refreshModelsFallback', { error: result.error || '' })
-  } catch (e: any) {
-    modelRefreshOk.value = false
-    modelRefreshMessage.value = e?.message || t('settings.refreshModelsFailed')
-  } finally {
-    refreshingModels.value = false
-  }
-}
-
 async function testConnection() {
   testing.value = true
   testResult.value = null
   try {
-    const result = await invoke<any>('fetch_model_info', { request: modelFetchPayload() })
-    testResult.value = result.dynamic
-      ? { success: true, message: t('settings.refreshModelsSuccess', { count: (result.models || []).length }) }
-      : { success: false, message: result.error || t('settings.testFailed') }
+    const payload: any = { provider: form.provider }
+    if (form.provider === 'gemini') {
+      payload.gemini_api_key = form.gemini_api_key
+      payload.model = form.gemini_extraction_model
+    } else if (form.provider === 'claude') {
+      payload.claude_api_key = form.claude_api_key
+      payload.model = form.claude_extraction_model
+    } else if (form.provider === 'openai') {
+      payload.openai_api_key = form.openai_api_key
+      payload.model = form.openai_extraction_model
+    } else if (form.provider === 'deepseek') {
+      payload.deepseek_api_key = form.deepseek_api_key
+      payload.model = form.deepseek_extraction_model
+    } else if (form.provider === 'openai_compatible') {
+      payload.local_base_url = form.local_base_url
+      payload.local_api_key = form.local_api_key
+      payload.model = form.local_extraction_model
+    }
+    const result = await api.post<any>('/api/settings/test-connection', payload)
+    testResult.value = result
   } catch {
     testResult.value = { success: false, message: t('settings.testFailed') }
   } finally {
@@ -709,31 +616,27 @@ async function testConnection() {
 async function save() {
   saving.value = true
   try {
-    const settingsToSave = {
+    await api.put('/api/settings', {
       provider: form.provider,
 
-      gemini_api_key: actualKey(form.gemini_api_key),
+      gemini_api_key: form.gemini_api_key.trim() || undefined,
       gemini_expansion_model: form.gemini_expansion_model,
       gemini_extraction_model: form.gemini_extraction_model,
 
-      claude_api_key: actualKey(form.claude_api_key),
+      claude_api_key: form.claude_api_key.trim() || undefined,
       claude_expansion_model: form.claude_expansion_model,
       claude_extraction_model: form.claude_extraction_model,
 
-      openai_api_key: actualKey(form.openai_api_key),
+      openai_api_key: form.openai_api_key.trim() || undefined,
       openai_expansion_model: form.openai_expansion_model,
       openai_extraction_model: form.openai_extraction_model,
 
-      kimi_api_key: actualKey(form.kimi_api_key),
-      kimi_expansion_model: form.kimi_expansion_model,
-      kimi_extraction_model: form.kimi_extraction_model,
-
-      deepseek_api_key: actualKey(form.deepseek_api_key),
+      deepseek_api_key: form.deepseek_api_key.trim() || undefined,
       deepseek_expansion_model: form.deepseek_expansion_model,
       deepseek_extraction_model: form.deepseek_extraction_model,
 
       local_base_url: form.local_base_url.trim(),
-      local_api_key: actualKey(form.local_api_key),
+      local_api_key: form.local_api_key.trim() || undefined,
       local_expansion_model: form.local_expansion_model.trim(),
       local_extraction_model: form.local_extraction_model.trim(),
 
@@ -741,12 +644,7 @@ async function save() {
       top_k: form.top_k,
       system_prompt_override: form.system_prompt_override,
       expansion_prompt_override: form.expansion_prompt_override,
-    }
-    
-    // 改用 Rust 保存设置
-    await invoke('update_settings', { newSettings: settingsToSave })
-    clearApiKeyInputs()
-    
+    })
     window.dispatchEvent(new CustomEvent('settings-updated'))
     setTimeout(() => { saving.value = false }, 500)
   } catch (e) {
@@ -959,6 +857,8 @@ async function save() {
 }
 .btn-test:hover { background: rgba(35, 131, 226, 0.06); }
 .btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
+.action-row { display: flex; gap: 8px; margin-bottom: 4px; }
+.fetch-hint { margin: 0 0 12px; }
 
 .range-row {
   display: flex; align-items: center; gap: 10px;

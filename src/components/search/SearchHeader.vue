@@ -16,9 +16,9 @@
       <button
         class="btn-primary"
         @click="$emit('search')"
-        :disabled="!searchStore.query.trim() || searchStore.isExpanding || searchStore.isSearching || searchStore.isExtracting"
+        :disabled="!searchStore.query.trim() || searchStore.isExpanding || searchStore.isSearching"
       >
-        {{ searchStore.isExpanding ? t('search.aiAnalyzing') : searchStore.isSearching ? t('search.searching') : searchStore.isExtracting ? t('search.extracting') : t('search.searchBtn') }}
+        {{ searchStore.isExpanding ? t('search.aiAnalyzing') : searchStore.isSearching ? t('search.searching') : t('search.searchBtn') }}
       </button>
     </div>
 
@@ -72,9 +72,9 @@
               <span>{{ f }}</span>
             </label>
             <div class="file-dropdown-actions">
-              <button @click="searchStore.fileFilter = []" class="btn-ghost btn-xs">清空</button>
-              <button @click="searchStore.fileFilter = [...availableFiles]" class="btn-ghost btn-xs">全选</button>
-              <button @click="showFileDropdown = false" class="btn-ghost btn-xs">确定</button>
+              <button @click="searchStore.fileFilter = []" class="btn-ghost btn-xs">{{ t('common.clear') }}</button>
+              <button @click="searchStore.fileFilter = [...availableFiles]" class="btn-ghost btn-xs">{{ t('common.selectAll') }}</button>
+              <button @click="showFileDropdown = false" class="btn-ghost btn-xs">{{ t('common.ok') }}</button>
             </div>
           </div>
         </div>
@@ -87,8 +87,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useSearchStore } from '@/stores/search'
 import { useProjectStore } from '@/stores/project'
+import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
-import { invoke } from '@tauri-apps/api/core'
 
 defineEmits<{ search: [] }>()
 
@@ -103,23 +103,13 @@ const availableFiles = ref<string[]>([])
 async function loadAvailableFiles() {
   if (!projectStore.currentProjectName) return
   try {
-    // 改用 Rust 获取文件列表
-    const data = await invoke<string[]>('get_project_files', {
-      projectName: projectStore.currentProjectName
-    })
-    availableFiles.value = data || []
+    const data = await api.get<{ files: string[]; total: number }>(
+      `/api/library/stats/${encodeURIComponent(projectStore.currentProjectName)}`
+    )
+    availableFiles.value = data.files || []
   } catch {
     availableFiles.value = []
   }
-}
-
-async function loadSearchSettings() {
-  try {
-    const settings = await invoke<any>('get_settings')
-    if (typeof settings.top_k === 'number') {
-      searchStore.topK = settings.top_k
-    }
-  } catch {}
 }
 
 function closeFileDropdownOnOutside() { showFileDropdown.value = false }
@@ -137,13 +127,10 @@ function collapseAdvanced() { showAdvanced.value = false }
 
 onMounted(() => {
   loadAvailableFiles()
-  loadSearchSettings()
   document.addEventListener('click', closeFileDropdownOnOutside)
-  window.addEventListener('settings-updated', loadSearchSettings)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeFileDropdownOnOutside)
-  window.removeEventListener('settings-updated', loadSearchSettings)
 })
 
 defineExpose({ loadAvailableFiles, collapseAdvanced })
@@ -172,7 +159,7 @@ defineExpose({ loadAvailableFiles, collapseAdvanced })
 .file-filter-box-row { display: flex; align-items: center; justify-content: space-between; }
 .file-filter-placeholder { color: var(--text-muted); flex: 1; }
 .file-filter-arrow { font-size: 10px; color: var(--text-muted); flex-shrink: 0; margin-left: 4px; }
-.file-chip { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 3px 8px; background: #EBF4FF; color: var(--accent); border-radius: 3px; font-size: 11px; width: 100%; box-sizing: border-box; overflow: hidden; }
+.file-chip { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 3px 8px; background: var(--accent-soft); color: var(--accent); border-radius: 3px; font-size: 11px; width: 100%; box-sizing: border-box; overflow: hidden; }
 .file-chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { cursor: pointer; font-size: 13px; opacity: 0.6; flex-shrink: 0; line-height: 1; }
 .chip-remove:hover { opacity: 1; }
@@ -180,7 +167,7 @@ defineExpose({ loadAvailableFiles, collapseAdvanced })
 .file-dropdown-empty { padding: 8px 10px; font-size: 12px; color: var(--text-muted); }
 .file-option { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; transition: background 100ms; }
 .file-option:hover { background: var(--hover-bg); }
-.file-option.checked { background: #f0f7ff; }
+.file-option.checked { background: var(--accent-soft); }
 .file-option input[type="checkbox"] { margin: 0; accent-color: var(--accent); }
 .file-dropdown-actions { display: flex; gap: 4px; padding: 4px 8px; border-top: 1px solid var(--border); justify-content: flex-end; position: sticky; bottom: 0; background: var(--bg); }
 .btn-xs { font-size: 11px; padding: 2px 6px; }

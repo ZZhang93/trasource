@@ -16,6 +16,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from pydantic import BaseModel
 
 import core.project_manager as pm
+import core.retriever as retriever
 import core.ingest as ingest
 
 router = APIRouter()
@@ -77,7 +78,7 @@ def _unique_dest(filename: str) -> str:
 # ── 共享库统计 ────────────────────────────────────────────────
 
 @router.get("/api/library/stats/_shared")
-async def shared_stats():
+def shared_stats():
     """共享库所有文件及总记录数"""
     db = pm.get_shared_db_path()
     if not os.path.exists(db):
@@ -91,10 +92,10 @@ async def shared_stats():
 
 
 @router.get("/api/library/stats/{project_name}")
-async def project_stats(project_name: str):
+def project_stats(project_name: str):
     """项目的文件列表（= shared_files 引用）及记录数统计"""
     if project_name == "_shared":
-        return await shared_stats()
+        return shared_stats()
 
     project_files = pm.get_project_shared_files(project_name)
     if not project_files:
@@ -149,7 +150,7 @@ async def get_file_usage(filename: str):
 
 
 @router.delete("/api/library/files/_shared/{filename:path}")
-async def delete_shared_file(filename: str):
+def delete_shared_file(filename: str):
     """从共享库删除文件，并自动清除所有项目中的引用"""
     db = pm.get_shared_db_path()
     if not os.path.exists(db):
@@ -180,26 +181,3 @@ async def delete_shared_file(filename: str):
     }
 
 
-# ── 兼容旧接口（保留，转发到新逻辑）────────────────────────────
-
-@router.delete("/api/library/files/{project_name}/{filename:path}")
-async def delete_library_file_compat(project_name: str, filename: str):
-    """兼容旧调用：根据 project_name 决定是删除还是移除引用"""
-    if project_name == "_shared":
-        return await delete_shared_file(filename)
-    else:
-        # 旧逻辑：从项目引用中移除
-        return await remove_file_from_project(project_name, filename)
-
-
-@router.get("/api/library/files")
-async def list_all_files():
-    """列出共享库所有文件（供其他模块使用）"""
-    shared_db = pm.get_shared_db_path()
-    if not os.path.exists(shared_db):
-        return []
-    try:
-        files = ingest.get_all_source_files(shared_db)
-        return [{"filename": f, "project": "_shared", "project_label": "共享库"} for f in files]
-    except Exception:
-        return []

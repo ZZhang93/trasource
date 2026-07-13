@@ -63,7 +63,7 @@ function getWeightClass(w: number): string {
 .intent { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
 .terms { display: flex; flex-wrap: wrap; gap: 6px; }
 .term-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; }
-.weight-high { background: #EBF4FF; color: #2383E2; }
+.weight-high { background: var(--accent-soft); color: #2383E2; }
 .weight-mid  { background: #F0FFF4; color: #38A169; }
 .weight-low  { background: var(--hover-bg); color: var(--text-muted); }
 .weight { font-size: 10px; opacity: 0.7; }

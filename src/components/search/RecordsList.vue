@@ -3,7 +3,7 @@
     <summary class="panel-header">
       <span>{{ t('records.totalRecords', { count: totalFound.toLocaleString() }) }}</span>
     </summary>
-    <div class="raw-list">
+    <div class="raw-list" ref="listEl">
       <div v-if="!records.length" class="raw-empty">
         <span class="loading-dot">◌</span> {{ t('records.loading') }}
       </div>
@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { SearchRecord } from '@/stores/search'
 import { useI18n } from '@/i18n'
 const { t } = useI18n()
@@ -48,6 +48,12 @@ defineEmits<{
   'open-detail': [record: SearchRecord]
   'page-change': [page: number]
 }>()
+
+// 翻页后滚回列表顶部
+const listEl = ref<HTMLElement | null>(null)
+watch(() => props.currentPage, () => {
+  listEl.value?.scrollTo({ top: 0 })
+})
 
 const paginatedRecords = computed(() => {
   const start = (props.currentPage - 1) * props.pageSize

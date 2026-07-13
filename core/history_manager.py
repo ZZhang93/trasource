@@ -68,17 +68,23 @@ def add_history(
     return entry
 
 
+# 列表查询不携带 ai_output 全文（可能几万字），只返回 has_output 标记；
+# 恢复历史时再按 id 取完整记录。
+_LIST_COLS = ("id, project_name, query, language, expansion, total_found, created_at, "
+              "(length(ai_output) > 0) AS has_output")
+
+
 def list_history(project_name: Optional[str] = None, limit: int = 50) -> list:
-    """返回历史列表（可按项目筛选），按时间倒序。"""
+    """返回历史列表（可按项目筛选），按时间倒序。不含 ai_output 全文。"""
     conn = get_connection()
     if project_name:
         rows = conn.execute(
-            "SELECT * FROM search_history WHERE project_name = ? ORDER BY created_at DESC LIMIT ?",
+            f"SELECT {_LIST_COLS} FROM search_history WHERE project_name = ? ORDER BY created_at DESC LIMIT ?",
             (project_name, limit),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM search_history ORDER BY created_at DESC LIMIT ?",
+            f"SELECT {_LIST_COLS} FROM search_history ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     conn.close()

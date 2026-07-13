@@ -32,9 +32,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from backend.routes.projects import router as projects_router
+from backend.routes.search import router as search_router
 from backend.routes.import_files import router as import_router
 from backend.routes.library import router as library_router
+from backend.routes.chat import router as chat_router
 from backend.routes.notes import router as notes_router
+from backend.routes.settings import router as settings_router
 from backend.routes.history import router as history_router
 
 # ────────────────────────────────────────────────
@@ -47,12 +51,9 @@ init_app_db()
 # 日志
 # ────────────────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
-handlers = [logging.FileHandler("logs/app.log", encoding="utf-8")]
-handlers.append(logging.StreamHandler())
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=handlers,
 )
 logger = logging.getLogger("backend")
 
@@ -61,7 +62,7 @@ logger = logging.getLogger("backend")
 # ────────────────────────────────────────────────
 app = FastAPI(
     title="史料检索引擎 API",
-    version="1.2.0",
+    version="1.3.0",
     docs_url="/docs",
 )
 
@@ -82,15 +83,19 @@ app.add_middleware(
 # ────────────────────────────────────────────────
 # 路由注册
 # ────────────────────────────────────────────────
+app.include_router(projects_router)
+app.include_router(search_router)
 app.include_router(import_router)
 app.include_router(library_router)
+app.include_router(chat_router)
 app.include_router(notes_router)
+app.include_router(settings_router)
 app.include_router(history_router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.2.0"}
+    return {"status": "ok", "version": "1.3.0"}
 
 
 # ────────────────────────────────────────────────

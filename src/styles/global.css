@@ -11,6 +11,7 @@
     --sidebar-bg:  #F7F6F3;
     --accent:      #2383E2;
     --accent-hover:#1a6fc4;
+    --accent-soft: #EBF4FF;
     --text:        #37352F;
     --text-muted:  #9B9A97;
     --border:      #E9E9E7;
@@ -30,15 +31,6 @@
     --shadow-lg:   0 4px 24px rgba(0,0,0,0.12);
 
     --transition:  150ms ease-out;
-  }
-
-  .dark {
-    --bg:          #191919;
-    --sidebar-bg:  #202020;
-    --text:        #E6E6E5;
-    --text-muted:  #7A7A79;
-    --border:      #2F2F2F;
-    --hover-bg:    #2B2B2B;
   }
 
   * { box-sizing: border-box; }

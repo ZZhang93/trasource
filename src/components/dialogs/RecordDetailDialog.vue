@@ -30,13 +30,14 @@
         <span v-if="record.interview_date" class="meta-tag">📅 {{ record.interview_date }}</span>
         <span v-if="record.interview_location" class="meta-tag">📍 {{ record.interview_location }}</span>
         <span v-if="record.relevance_score" class="meta-tag score-tag">
-          {{ t('detail.relevanceScore', { score: (record.relevance_score * 100).toFixed(0) }) }}
+          {{ t('detail.relevanceScore', { score: record.relevance_score }) }}
         </span>
       </div>
 
       <!-- 正文 -->
       <div class="content-area">
-        <div class="content-text">{{ record.content }}</div>
+        <div class="content-text">{{ fullContent }}</div>
+        <p v-if="loadingFull" class="loading-full">{{ t('detail.loadingFull') }}</p>
       </div>
 
       <!-- 底部操作 -->
@@ -44,7 +45,7 @@
         <button class="btn-ghost" @click="copyContent">
           {{ copied ? t('detail.copied') : t('detail.copyOriginal') }}
         </button>
-        <button class="btn-primary" @click="$emit('create-note', record)">
+        <button class="btn-primary" @click="emitCreateNote">
           {{ t('detail.createNote') }}
         </button>
       </div>
@@ -53,19 +54,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { SearchRecord } from '@/stores/search'
+import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
 
 const props = defineProps<{ record: SearchRecord }>()
-defineEmits<{
+const emit = defineEmits<{
   close: []
   'create-note': [record: SearchRecord]
 }>()
 
 const copied = ref(false)
+// 列表记录只带预览，打开详情时按 id 拉全文
+const fullContent = ref(props.record.content)
+const loadingFull = ref(false)
+
+onMounted(async () => {
+  if (!props.record.content_truncated) return
+  loadingFull.value = true
+  try {
+    const full = await api.get<SearchRecord>(`/api/search/record/${props.record.id}`)
+    fullContent.value = full.content
+  } catch {
+    // 拉取失败时保留预览内容
+  } finally {
+    loadingFull.value = false
+  }
+})
+
+function emitCreateNote() {
+  emit('create-note', { ...props.record, content: fullContent.value, content_truncated: false })
+}
 
 const docTypeLabel = computed(() => {
   const map: Record<string, string> = {
@@ -85,7 +107,7 @@ async function copyContent() {
       props.record.author,
       props.record.title !== props.record.source_file ? props.record.title : '',
     ].filter(Boolean).join(' / ')
-    await navigator.clipboard.writeText(`${props.record.content}\n\n——${meta}`)
+    await navigator.clipboard.writeText(`${fullContent.value}\n\n——${meta}`)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch {}
@@ -180,7 +202,13 @@ async function copyContent() {
 
 .score-tag {
   color: var(--accent);
-  background: #EBF4FF;
+  background: var(--accent-soft);
+}
+
+.loading-full {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 10px 0 0;
 }
 
 .content-area {

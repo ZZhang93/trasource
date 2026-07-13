@@ -28,10 +28,6 @@ def get_meta_path(project_name: str) -> str:
     return os.path.join(get_project_dir(project_name), "project.json")
 
 
-def get_raw_files_dir(project_name: str) -> str:
-    return os.path.join(get_project_dir(project_name), "raw_files")
-
-
 def get_shared_db_path() -> str:
     """返回全局共享文件库的数据库路径"""
     return get_db_path(SHARED_PROJECT)
@@ -96,31 +92,16 @@ def create_project(name: str, description: str = "") -> dict:
         raise ValueError(f"项目「{name}」已存在")
 
     os.makedirs(os.path.join(project_dir, "db"))
-    os.makedirs(os.path.join(project_dir, "raw_files"))
 
     meta = {
         "name": name,
         "description": description,
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
-        "file_count": 0,
         "record_count": 0,
-        "files": [],
         "shared_files": [],
     }
     with open(get_meta_path(name), "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
-    return meta
-
-
-def update_project_meta(project_name: str, **kwargs):
-    """更新项目元数据"""
-    meta_path = get_meta_path(project_name)
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-    meta.update(kwargs)
-    meta["updated_at"] = datetime.now().isoformat()
-    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     return meta
 

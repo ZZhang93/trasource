@@ -22,11 +22,6 @@ const router = createRouter({
       name: 'note-detail',
       component: () => import('@/views/NotesView.vue'),
     },
-    {
-      path: '/history',
-      name: 'history',
-      component: () => import('@/views/HistoryView.vue'),
-    },
   ],
 })
 

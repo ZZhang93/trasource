@@ -14,9 +14,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # 默认模型
 GEMINI_MODEL = "gemini-3-flash-preview"
-QUERY_EXPANSION_MODEL = "gemini-3-flash-preview"
 
 # 各 AI 提供商可用模型列表 { 显示名: API ID }
+# 仅作为内置默认/离线回退；设置页可从提供商 API 在线拉取最新列表。
 AVAILABLE_MODELS = {
     "gemini": {
         "Gemini 2.5 Flash":              "gemini-2.5-flash",
@@ -28,26 +28,19 @@ AVAILABLE_MODELS = {
     "claude": {
         "Claude Haiku 4.5":  "claude-haiku-4-5-20251001",
         "Claude Sonnet 4.6": "claude-sonnet-4-6",
-        "Claude Opus 4.6":   "claude-opus-4-6",
+        "Claude Sonnet 5":   "claude-sonnet-5",
+        "Claude Opus 4.8":   "claude-opus-4-8",
     },
     "openai": {
         "GPT-4o Mini":  "gpt-4o-mini",
         "GPT-4o":       "gpt-4o",
-        "GPT-4.1":      "gpt-4.1",
-        "GPT-4.1 Mini": "gpt-4.1-mini",
-        "GPT-4.1 Nano": "gpt-4.1-nano",
-        "o3 Mini":      "o3-mini",
-    },
-    "kimi": {
-        "Moonshot v1 8K":   "moonshot-v1-8k",
-        "Moonshot v1 32K":  "moonshot-v1-32k",
-        "Moonshot v1 128K": "moonshot-v1-128k",
+        "GPT-5 Mini":   "gpt-5-mini",
+        "GPT-5":        "gpt-5",
+        "GPT-5.1":      "gpt-5.1",
     },
     "deepseek": {
-        "DeepSeek V4 Flash":          "deepseek-v4-flash",
-        "DeepSeek V4 Pro":            "deepseek-v4-pro",
-        "DeepSeek Chat (Legacy)":     "deepseek-chat",
-        "DeepSeek Reasoner (Legacy)": "deepseek-reasoner",
+        "DeepSeek Chat (V3)":     "deepseek-chat",
+        "DeepSeek Reasoner (R1)": "deepseek-reasoner",
     },
 }
 
@@ -56,22 +49,12 @@ PROVIDER_LABELS = {
     "gemini": "Google Gemini",
     "claude": "Claude (Anthropic)",
     "openai": "ChatGPT (OpenAI)",
-    "kimi": "Kimi (Moonshot)",
     "deepseek": "DeepSeek",
     "openai_compatible": "Local Model (Ollama / vLLM)",
 }
 
 # 设置持久化文件路径
 SETTINGS_FILE = "settings.json"
-
-# AI 对话模型选项（向后兼容，不再用于 UI 下拉，但保留作回退）
-CHAT_MODELS = {
-    "Gemini 2.5 Pro": "gemini-2.5-pro",
-    "Gemini 2.5 Flash": "gemini-2.5-flash",
-    "Gemini 3 Flash": "gemini-3-flash-preview",
-}
-CHAT_DEFAULT_MODEL = "Gemini 2.5 Pro"
-CHAT_MAX_HISTORY = 20
 
 # 安全阈值：超过此字符数则截断 Context（预留空间给 Prompt 和输出）
 MAX_CONTEXT_CHARS = 1_500_000
@@ -84,9 +67,6 @@ TOP_K_FOR_LLM = 50
 
 # 每个来源文件至少送给 AI 的记录数（多样性保底）
 TOP_K_PER_SOURCE = 3
-
-# 每页显示记录数（分页浏览原始检索结果）
-RECORDS_PER_PAGE = 20
 
 # 数据库根目录
 PROJECTS_DIR = "projects"

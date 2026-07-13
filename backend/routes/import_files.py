@@ -4,6 +4,7 @@
 
 import json
 import os
+import time
 import uuid
 import logging
 import asyncio
@@ -18,14 +19,25 @@ import core.ingest as ingest
 router = APIRouter()
 logger = logging.getLogger("backend.import")
 
-# 存放进行中任务的内存字典  { task_id: { status, progress, message, error } }
+# 存放进行中任务的内存字典  { task_id: { status, progress, message, error, finished_at } }
 _tasks: dict = {}
+
+
+def _purge_finished_tasks(max_age_seconds: float = 600):
+    """清理已完成/失败超过 max_age 的任务，防止无人订阅进度流时内存泄漏。"""
+    now = time.time()
+    stale = [
+        tid for tid, t in _tasks.items()
+        if t.get("status") in ("done", "error")
+        and now - t.get("finished_at", now) > max_age_seconds
+    ]
+    for tid in stale:
+        _tasks.pop(tid, None)
 
 
 class ImportStartRequest(BaseModel):
     project_name: str
     file_path: str                  # 服务器可访问的绝对路径
-    use_shared: bool = False        # True → 导入到共享库
     # 学术元数据（书籍/论文/访谈时填写）
     doc_type: str = "newspaper"     # newspaper / book / paper / interview
     title: Optional[str] = None
@@ -77,6 +89,7 @@ async def start_import(req: ImportStartRequest):
     if ingest.check_file_already_imported(db_path, filename):
         raise HTTPException(status_code=409, detail=f"文件已导入：{filename}")
 
+    _purge_finished_tasks()
     task_id = str(uuid.uuid4())
     _tasks[task_id] = {
         "status": "pending",
@@ -154,6 +167,7 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             "progress": 100.0,
             "imported": total,
             "message": f"导入完成：{total:,} 条记录",
+            "finished_at": time.time(),
         })
 
         # 自动将文件引用加入来源项目（新架构：项目只保存引用）
@@ -175,6 +189,7 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             "status": "error",
             "error": str(e),
             "message": f"导入失败：{e}",
+            "finished_at": time.time(),
         })
 
 

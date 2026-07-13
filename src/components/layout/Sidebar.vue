@@ -286,35 +286,42 @@ async function clearAllHistory() {
 }
 
 async function restoreHistory(entry: any) {
-  // 1) 先重置状态，再恢复缓存
+  // 1) 列表项不含 ai_output 全文，先按 id 取完整记录
+  let full = entry
+  try {
+    full = await api.get<any>(`/api/history/${entry.id}`)
+  } catch {}
+
+  // 2) 重置状态，恢复缓存
   searchStore.reset()
-  searchStore.query = entry.query
-  searchStore.language = entry.language || 'zh'
-  if (entry.expansion) searchStore.expansion = entry.expansion
-  if (entry.ai_output) {
-    searchStore.aiOutput = entry.ai_output
+  searchStore.query = full.query
+  searchStore.language = full.language || 'zh'
+  if (full.expansion) searchStore.expansion = full.expansion
+  if (full.ai_output) {
+    searchStore.aiOutput = full.ai_output
     searchStore.extractionDone = true
   }
-  searchStore.totalFound = entry.total_found || 0
+  searchStore.totalFound = full.total_found || 0
   searchStore.hasSearched = true
 
   router.push('/search')
 
-  // 2) 静默加载 records（不显示 loading，不阻塞 UI）
-  if (entry.query && projectStore.currentProjectName) {
-    const weightedTokens = entry.expansion?.success && entry.expansion?.terms
-      ? Object.entries(entry.expansion.terms).map(([t, w]) => [t, w])
+  // 3) 静默重跑检索恢复 records 和服务端 context（对话依赖 search_id）
+  if (full.query && projectStore.currentProjectName) {
+    const weightedTokens = full.expansion?.success && full.expansion?.terms
+      ? Object.entries(full.expansion.terms).map(([t, w]) => [t, w])
       : null
     api.post<any>('/api/search/execute', {
-      query: entry.query,
-      language: entry.language || 'zh',
+      query: full.query,
+      language: full.language || 'zh',
       project_name: projectStore.currentProjectName,
       weighted_tokens: weightedTokens,
       top_k: searchStore.topK,
     }).then(result => {
       searchStore.records = result.records || []
       searchStore.totalFound = result.total_found || searchStore.records.length || 0
-      searchStore.contextText = result.context || ''
+      searchStore.searchId = result.search_id || ''
+      searchStore.contextChars = result.context_chars || 0
     }).catch(() => {})
   }
 }
@@ -517,7 +524,7 @@ function formatCount(n: number): string {
   font-size: 12px; color: var(--text-muted); cursor: pointer;
   transition: all 150ms;
 }
-.action-btn:hover { border-color: var(--accent); color: var(--accent); background: #f0f7ff; }
+.action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 .sidebar-bottom { padding: 0 8px 10px; }
 .sidebar-divider { height: 1px; background: var(--border); margin: 4px 0 6px; }

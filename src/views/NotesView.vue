@@ -66,7 +66,11 @@
             {{ notesStore.saving ? t('notes.saving') : t('notes.save') }}
           </button>
           <button class="btn-ghost" @click="exportMd" style="font-size:12px">{{ t('notes.export') }}</button>
-          <button class="delete-btn" @click="confirmDelete" :title="t('notes.deleteNote')">🗑️</button>
+          <template v-if="deleteConfirming">
+            <button class="del-confirm-yes" @click="doDelete">{{ t('common.delete') }}</button>
+            <button class="btn-ghost" style="font-size:12px" @click="deleteConfirming = false">{{ t('common.cancel') }}</button>
+          </template>
+          <button v-else class="delete-btn" @click="deleteConfirming = true" :title="t('notes.deleteNote')" :aria-label="t('notes.deleteNote')">🗑️</button>
         </div>
       </div>
 
@@ -120,14 +124,16 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 import { useProjectStore } from '@/stores/project'
 import { useNotesStore, type Note } from '@/stores/notes'
+import { useUiStore } from '@/stores/ui'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
 const projectStore = useProjectStore()
 const notesStore = useNotesStore()
+const ui = useUiStore()
 
 // 筛选
 const filterProject = ref(projectStore.currentProjectName || '')
@@ -146,10 +152,10 @@ const saveStatus = computed(() => {
   return t('notes.unsaved')
 })
 
-// 渲染 Markdown
+// 渲染 Markdown（经 DOMPurify 消毒）
 const renderedContent = computed(() => {
   if (!editContent.value) return `<p class="muted">${t('notes.emptyPreview')}</p>`
-  return marked.parse(editContent.value) as string
+  return renderMarkdown(editContent.value)
 })
 
 // 筛选后的笔记
@@ -175,6 +181,7 @@ watch(() => notesStore.currentNote, (note) => {
     editContent.value = note.content_md
     editTags.value = note.tags
     isDirty.value = false
+    deleteConfirming.value = false
   }
 })
 
@@ -197,25 +204,33 @@ watch([editTitle, editContent, editTags], () => {
 
 async function autoSave() {
   if (!notesStore.currentNote || !isDirty.value) return
-  await notesStore.saveNote(notesStore.currentNote.id, {
-    title: editTitle.value,
-    content_md: editContent.value,
-    tags: editTags.value,
-  })
-  isDirty.value = false
-  showAutoSaveToast.value = true
-  setTimeout(() => { showAutoSaveToast.value = false }, 2000)
+  try {
+    await notesStore.saveNote(notesStore.currentNote.id, {
+      title: editTitle.value,
+      content_md: editContent.value,
+      tags: editTags.value,
+    })
+    isDirty.value = false
+    showAutoSaveToast.value = true
+    setTimeout(() => { showAutoSaveToast.value = false }, 2000)
+  } catch {
+    ui.toast(t('notes.saveFailed'), 'error')
+  }
 }
 
 async function saveNote() {
   if (!notesStore.currentNote) return
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
-  await notesStore.saveNote(notesStore.currentNote.id, {
-    title: editTitle.value,
-    content_md: editContent.value,
-    tags: editTags.value,
-  })
-  isDirty.value = false
+  try {
+    await notesStore.saveNote(notesStore.currentNote.id, {
+      title: editTitle.value,
+      content_md: editContent.value,
+      tags: editTags.value,
+    })
+    isDirty.value = false
+  } catch {
+    ui.toast(t('notes.saveFailed'), 'error')
+  }
 }
 
 async function handleNewNote() {
@@ -228,10 +243,17 @@ async function handleNewNote() {
   notesStore.currentNote = note
 }
 
-async function confirmDelete() {
+const deleteConfirming = ref(false)
+
+async function doDelete() {
   if (!notesStore.currentNote) return
-  if (!confirm(t('notes.confirmDelete', { title: notesStore.currentNote.title }))) return
-  await notesStore.deleteNote(notesStore.currentNote.id)
+  deleteConfirming.value = false
+  try {
+    await notesStore.deleteNote(notesStore.currentNote.id)
+    ui.toast(t('notes.deleted'), 'success')
+  } catch {
+    ui.toast(t('notes.deleteFailed'), 'error')
+  }
 }
 
 function exportMd() {
@@ -387,7 +409,7 @@ function formatDate(dt: string): string {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
-  background: #EBF4FF;
+  background: var(--accent-soft);
   color: #2383E2;
 }
 
@@ -477,6 +499,17 @@ function formatDate(dt: string): string {
   transition: all 150ms;
 }
 .delete-btn:hover { opacity: 1; background: #FFF5F5; }
+
+.del-confirm-yes {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: #e53e3e;
+  color: white;
+  cursor: pointer;
+}
+.del-confirm-yes:hover { background: #c53030; }
 
 .tags-row {
   display: flex;

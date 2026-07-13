@@ -1,18 +1,24 @@
 <template>
-  <div v-if="aiOutput || isExtracting" class="extraction-panel">
+  <div v-if="aiOutput || isExtracting || extractError" class="extraction-panel">
     <div class="extraction-panel-header">
       <span>{{ t('extraction.title') }}</span>
       <span v-if="isExtracting" class="streaming-dot">●</span>
       <template v-else>
         <span class="model-tag">{{ modelName || 'AI' }}</span>
-        <button class="copy-btn" @click.stop="copyOutput" :class="{ copied: justCopied }">
+        <button v-if="aiOutput" class="copy-btn" @click.stop="copyOutput" :class="{ copied: justCopied }">
           {{ justCopied ? t('extraction.copied') : t('extraction.copy') }}
         </button>
       </template>
     </div>
 
-    <div class="extraction-body">
-      <div class="extraction-text">{{ aiOutput }}<span v-if="isExtracting" class="cursor">▋</span></div>
+    <!-- 错误横幅（独立于正文展示） -->
+    <div v-if="extractError" class="error-banner">
+      <span>⚠️ {{ extractError }}</span>
+    </div>
+
+    <div v-if="aiOutput || isExtracting" class="extraction-body">
+      <div class="extraction-text md-body" v-html="renderedOutput"></div>
+      <span v-if="isExtracting" class="cursor">▋</span>
     </div>
 
     <div v-if="!isExtracting && sourceRecords.length > 0" class="sources-section">
@@ -43,14 +49,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { SearchRecord } from '@/stores/search'
+import { renderMarkdown } from '@/utils/markdown'
 import { useI18n } from '@/i18n'
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   aiOutput: string
   isExtracting: boolean
+  extractError?: string
   modelName: string
   sourceRecords: SearchRecord[]
 }>()
@@ -58,10 +66,11 @@ defineProps<{
 defineEmits<{ 'open-detail': [record: SearchRecord] }>()
 
 const justCopied = ref(false)
+const renderedOutput = computed(() => renderMarkdown(props.aiOutput))
 
 async function copyOutput() {
   try {
-    await navigator.clipboard.writeText(document.querySelector('.extraction-text')?.textContent || '')
+    await navigator.clipboard.writeText(props.aiOutput)
     justCopied.value = true
     setTimeout(() => { justCopied.value = false }, 2000)
   } catch {}
@@ -77,15 +86,30 @@ async function copyOutput() {
 .copy-btn { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text-muted); cursor: pointer; }
 .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
 .copy-btn.copied { border-color: #38a169; color: #38a169; }
+.error-banner { padding: 10px 14px; font-size: 13px; color: #c53030; background: #fff5f5; border-bottom: 1px solid var(--border); }
 .extraction-body { padding: 14px 16px; }
-.extraction-text { font-family: var(--font-serif); font-size: 14px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; margin: 0; color: var(--text); user-select: text; }
+.extraction-text { font-family: var(--font-serif); font-size: 14px; line-height: 1.9; word-break: break-word; color: var(--text); user-select: text; }
 .cursor { display: inline-block; animation: blink 0.8s infinite; color: var(--accent); }
+
+/* Markdown 元素样式 */
+.md-body :deep(p) { margin: 0 0 10px; }
+.md-body :deep(p:last-child) { margin-bottom: 0; }
+.md-body :deep(ul), .md-body :deep(ol) { padding-left: 22px; margin: 0 0 10px; }
+.md-body :deep(li) { margin-bottom: 4px; }
+.md-body :deep(h1), .md-body :deep(h2), .md-body :deep(h3) { font-size: 15px; font-weight: 700; margin: 14px 0 8px; }
+.md-body :deep(blockquote) { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 10px 0; color: var(--text-muted); }
+.md-body :deep(code) { font-family: var(--font-mono); font-size: 12px; background: var(--hover-bg); padding: 1px 5px; border-radius: 3px; }
+.md-body :deep(pre) { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow-x: auto; margin: 10px 0; }
+.md-body :deep(pre code) { background: none; padding: 0; }
+.md-body :deep(strong) { font-weight: 700; }
+.md-body :deep(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
 .sources-section { border-top: 1px solid var(--border); }
 .sources-title { padding: 8px 14px 6px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--sidebar-bg); border-bottom: 1px solid var(--border); }
 .sources-list { padding: 0; }
 .source-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border); transition: background 150ms; }
 .source-item:last-child { border-bottom: none; }
-.source-item:hover { background: #f0f7ff; }
+.source-item:hover { background: var(--accent-soft); }
 .source-num { color: white; background: var(--accent); border-radius: 3px; padding: 1px 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
 .source-info { flex: 1; min-width: 0; }
 .source-top-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
