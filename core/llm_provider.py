@@ -277,6 +277,7 @@ class OpenAIProvider(LLMProvider):
 # ──────────────────────────────────────────────
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+KIMI_BASE_URL = "https://api.moonshot.cn/v1"
 
 # provider → settings 键前缀 / 默认模型
 PROVIDER_KEY_PREFIX = {
@@ -284,6 +285,7 @@ PROVIDER_KEY_PREFIX = {
     "claude":            "claude",
     "openai":            "openai",
     "deepseek":          "deepseek",
+    "kimi":              "kimi",
     "openai_compatible": "local",
 }
 PROVIDER_DEFAULT_MODEL = {
@@ -291,6 +293,7 @@ PROVIDER_DEFAULT_MODEL = {
     "claude":            "claude-sonnet-4-6",
     "openai":            "gpt-4o",
     "deepseek":          "deepseek-chat",
+    "kimi":              "kimi-latest",
     "openai_compatible": "",
 }
 
@@ -304,6 +307,7 @@ def create_provider(settings: dict, model_override: str = None) -> LLMProvider:
       - "claude"            → ClaudeProvider
       - "openai"            → OpenAIProvider (ChatGPT 官方)
       - "deepseek"          → OpenAIProvider (DeepSeek 官方, OpenAI 兼容协议)
+      - "kimi"              → OpenAIProvider (Kimi/Moonshot 官方, OpenAI 兼容协议)
       - "openai_compatible" → OpenAIProvider (本地模型, 自定义 base_url)
     """
     provider_type = settings.get("provider", "gemini")
@@ -328,6 +332,14 @@ def create_provider(settings: dict, model_override: str = None) -> LLMProvider:
             api_key=settings.get("deepseek_api_key", ""),
             model_name=model_override or settings.get("deepseek_model", "deepseek-chat"),
             base_url=DEEPSEEK_BASE_URL,
+            proxy_url=proxy_url,
+        )
+
+    elif provider_type == "kimi":
+        return OpenAIProvider(
+            api_key=settings.get("kimi_api_key", ""),
+            model_name=model_override or settings.get("kimi_model", "kimi-latest"),
+            base_url=KIMI_BASE_URL,
             proxy_url=proxy_url,
         )
 

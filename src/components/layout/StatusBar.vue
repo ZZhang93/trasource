@@ -40,6 +40,7 @@ function getProviderLabel(p: string): string {
     claude: 'Claude',
     openai: 'ChatGPT',
     deepseek: 'DeepSeek',
+    kimi: 'Kimi',
   }
   if (p === 'openai_compatible') return t('status.localModel')
   return STATIC[p] || p
@@ -70,17 +71,22 @@ function getModelLabel(provider: string, modelId: string): string {
     'claude-opus-4-8': 'Opus 4.8',
     'deepseek-chat': 'Chat (V3)',
     'deepseek-reasoner': 'Reasoner (R1)',
+    'kimi-latest': 'Latest',
+    'kimi-k2-0711-preview': 'K2',
+    'kimi-k2-turbo-preview': 'K2 Turbo',
+    'moonshot-v1-32k': 'v1 32K',
+    'moonshot-v1-128k': 'v1 128K',
   }
   return SHORT[modelId] || modelId
 }
 
 const PROVIDER_PREFIX: Record<string, string> = {
   gemini: 'gemini', claude: 'claude', openai: 'openai',
-  deepseek: 'deepseek', openai_compatible: 'local',
+  deepseek: 'deepseek', kimi: 'kimi', openai_compatible: 'local',
 }
 const PROVIDER_DEFAULT: Record<string, string> = {
   gemini: 'gemini-3-flash-preview', claude: 'claude-sonnet-4-6',
-  openai: 'gpt-4o', deepseek: 'deepseek-chat', openai_compatible: '',
+  openai: 'gpt-4o', deepseek: 'deepseek-chat', kimi: 'kimi-latest', openai_compatible: '',
 }
 
 function getRoleModel(settings: any, role: 'expansion' | 'extraction'): string {

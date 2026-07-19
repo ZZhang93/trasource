@@ -22,6 +22,22 @@ if getattr(sys, 'frozen', False):
     for _d in ['data', 'logs', 'projects', 'uploads_tmp']:
         os.makedirs(os.path.join(DATA_DIR, _d), exist_ok=True)
     os.chdir(DATA_DIR)
+
+    # ── 孤儿进程防护 ──────────────────────────────
+    # 应用退出时 Tauri 用 SIGKILL 杀 sidecar，但只能杀到 PyInstaller 的
+    # 引导进程，信号无法传递给真正的 Python 子进程，会留下孤儿后端
+    # 继续占用 8765 端口（导致下次启动连到旧后端）。
+    # 这里监视 stdin（Tauri 持有的管道）：主程序退出 → 管道关闭 →
+    # read() 返回 EOF → 后端自行退出。同时覆盖主程序崩溃的情况。
+    def _exit_when_parent_dies():
+        try:
+            sys.stdin.buffer.read()   # 阻塞直到父进程退出（管道 EOF）
+        except Exception:
+            pass
+        os._exit(0)
+
+    import threading
+    threading.Thread(target=_exit_when_parent_dies, daemon=True).start()
 else:
     # 开发模式：从项目根目录加载
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +78,7 @@ logger = logging.getLogger("backend")
 # ────────────────────────────────────────────────
 app = FastAPI(
     title="史料检索引擎 API",
-    version="1.3.0",
+    version="1.3.1",
     docs_url="/docs",
 )
 
@@ -95,7 +111,7 @@ app.include_router(history_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.3.0"}
+    return {"status": "ok", "version": "1.3.1"}
 
 
 # ────────────────────────────────────────────────

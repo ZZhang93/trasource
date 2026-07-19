@@ -62,12 +62,14 @@ export default {
   'settings.providerClaude': 'Claude (Anthropic)',
   'settings.providerOpenAI': 'ChatGPT (OpenAI)',
   'settings.providerDeepSeek': 'DeepSeek',
+  'settings.providerKimi': 'Kimi (月之暗面)',
   'settings.providerLocal': '本地模型 (Ollama / vLLM)',
 
   // API Key
   'settings.geminiApiKey': 'Gemini API Key',
   'settings.claudeApiKey': 'Claude API Key',
   'settings.deepseekApiKey': 'DeepSeek API Key',
+  'settings.kimiApiKey': 'Kimi API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
   'settings.apiKeyHint': 'API Key 仅存储在本地，不会上传到任何服务器',
   'settings.apiKeyLocalHint': 'API Key 仅存储在本地',

@@ -43,6 +43,12 @@ _DEFAULTS = {
     "deepseek_expansion_model": "deepseek-chat",
     "deepseek_extraction_model": "deepseek-chat",
 
+    # Kimi / Moonshot AI（OpenAI 兼容协议）
+    "kimi_api_key": "",
+    "kimi_model": "kimi-latest",
+    "kimi_expansion_model": "kimi-latest",
+    "kimi_extraction_model": "kimi-latest",
+
     # 本地模型 (OpenAI-compatible)
     "local_base_url": "http://localhost:11434/v1",
     "local_api_key": "",
@@ -92,9 +98,10 @@ async def get_settings():
     s["claude_api_key_masked"] = _mask_key(s.get("claude_api_key", ""))
     s["openai_api_key_masked"] = _mask_key(s.get("openai_api_key", ""))
     s["deepseek_api_key_masked"] = _mask_key(s.get("deepseek_api_key", ""))
+    s["kimi_api_key_masked"] = _mask_key(s.get("kimi_api_key", ""))
     s["local_api_key_masked"] = _mask_key(s.get("local_api_key", ""))
     # 不返回明文 key
-    for k in ["gemini_api_key", "claude_api_key", "openai_api_key", "deepseek_api_key", "local_api_key"]:
+    for k in ["gemini_api_key", "claude_api_key", "openai_api_key", "deepseek_api_key", "kimi_api_key", "local_api_key"]:
         s.pop(k, None)
     return s
 
@@ -137,6 +144,11 @@ class SettingsUpdateRequest(BaseModel):
     deepseek_model: Optional[str] = None
     deepseek_expansion_model: Optional[str] = None
     deepseek_extraction_model: Optional[str] = None
+
+    kimi_api_key: Optional[str] = None
+    kimi_model: Optional[str] = None
+    kimi_expansion_model: Optional[str] = None
+    kimi_extraction_model: Optional[str] = None
 
     local_base_url: Optional[str] = None
     local_api_key: Optional[str] = None
@@ -203,6 +215,7 @@ class TestConnectionRequest(BaseModel):
     claude_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
+    kimi_api_key: Optional[str] = None
     local_base_url: Optional[str] = None
     local_api_key: Optional[str] = None
     model: Optional[str] = None
@@ -227,6 +240,9 @@ def test_connection(req: TestConnectionRequest):
     elif req.provider == "deepseek":
         temp_settings["deepseek_api_key"] = _resolve_key("deepseek", req.deepseek_api_key)
         temp_settings["deepseek_model"] = req.model or "deepseek-chat"
+    elif req.provider == "kimi":
+        temp_settings["kimi_api_key"] = _resolve_key("kimi", req.kimi_api_key)
+        temp_settings["kimi_model"] = req.model or "kimi-latest"
     elif req.provider == "openai_compatible":
         temp_settings["local_base_url"] = req.local_base_url or "http://localhost:11434/v1"
         temp_settings["local_api_key"] = _resolve_key("local", req.local_api_key)
@@ -282,13 +298,16 @@ def list_models(req: ListModelsRequest):
 
         # openai / deepseek / openai_compatible 都走 OpenAI 兼容协议
         from openai import OpenAI
-        from core.llm_provider import DEEPSEEK_BASE_URL
+        from core.llm_provider import DEEPSEEK_BASE_URL, KIMI_BASE_URL
         kwargs = {}
         if p == "openai":
             kwargs["api_key"] = _resolve_key("openai", req.api_key)
         elif p == "deepseek":
             kwargs["api_key"] = _resolve_key("deepseek", req.api_key)
             kwargs["base_url"] = DEEPSEEK_BASE_URL
+        elif p == "kimi":
+            kwargs["api_key"] = _resolve_key("kimi", req.api_key)
+            kwargs["base_url"] = KIMI_BASE_URL
         elif p == "openai_compatible":
             kwargs["api_key"] = _resolve_key("local", req.api_key) or "not-needed"
             saved = sm.load_settings(SETTINGS_FILE)

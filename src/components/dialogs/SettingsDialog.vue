@@ -161,6 +161,37 @@
             </div>
           </template>
 
+          <!-- Kimi (Moonshot AI) -->
+          <template v-if="form.provider === 'kimi'">
+            <div class="form-group">
+              <label>{{ t('settings.kimiApiKey') }}</label>
+              <div class="input-with-btn">
+                <input
+                  v-model="form.kimi_api_key"
+                  :type="showKey ? 'text' : 'password'"
+                  class="form-input"
+                  placeholder="sk-…"
+                />
+                <button class="inline-btn" @click="showKey = !showKey">
+                  {{ showKey ? t('settings.hideKey') : t('settings.showKey') }}
+                </button>
+              </div>
+              <p class="hint muted">{{ t('settings.apiKeyLocalHint') }}</p>
+            </div>
+            <div class="form-group">
+              <label>{{ t('settings.expansionModelLabel') }}</label>
+              <select v-model="form.kimi_expansion_model" class="form-select">
+                <option v-for="m in modelLists.kimi" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>{{ t('settings.extractionModelLabel') }}</label>
+              <select v-model="form.kimi_extraction_model" class="form-select">
+                <option v-for="m in modelLists.kimi" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+          </template>
+
           <!-- 本地模型 -->
           <template v-if="form.provider === 'openai_compatible'">
             <div class="form-group">
@@ -363,6 +394,7 @@ const providerLabelMap: Record<string, string> = {
   claude: 'settings.providerClaude',
   openai: 'settings.providerOpenAI',
   deepseek: 'settings.providerDeepSeek',
+  kimi: 'settings.providerKimi',
   openai_compatible: 'settings.providerLocal',
 }
 
@@ -401,6 +433,11 @@ const form = reactive({
   deepseek_expansion_model: 'deepseek-chat',
   deepseek_extraction_model: 'deepseek-chat',
 
+  kimi_api_key: '',
+  kimi_model: 'kimi-latest',
+  kimi_expansion_model: 'kimi-latest',
+  kimi_extraction_model: 'kimi-latest',
+
   local_base_url: 'http://localhost:11434/v1',
   local_api_key: '',
   local_model: '',
@@ -428,6 +465,7 @@ const providers = ref<{ label: string; value: string }[]>([
   { value: 'claude', label: 'Claude (Anthropic)' },
   { value: 'openai', label: 'ChatGPT (OpenAI)' },
   { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'kimi', label: 'Kimi (Moonshot AI)' },
   { value: 'openai_compatible', label: '本地模型 (Ollama / vLLM)' },
 ])
 const modelLists = reactive<Record<string, ModelOption[]>>({
@@ -435,6 +473,7 @@ const modelLists = reactive<Record<string, ModelOption[]>>({
   claude: [],
   openai: [],
   deepseek: [],
+  kimi: [],
   openai_compatible: [],
 })
 const showKey = ref(false)
@@ -453,6 +492,7 @@ const KEY_FIELD: Record<string, string> = {
   claude: 'claude_api_key',
   openai: 'openai_api_key',
   deepseek: 'deepseek_api_key',
+  kimi: 'kimi_api_key',
   openai_compatible: 'local_api_key',
 }
 
@@ -539,6 +579,7 @@ onMounted(async () => {
     modelLists.claude = modelsData.claude || []
     modelLists.openai = modelsData.openai || []
     modelLists.deepseek = modelsData.deepseek || []
+    modelLists.kimi = modelsData.kimi || []
     loadCachedModels()
 
     // 填充表单
@@ -556,11 +597,15 @@ onMounted(async () => {
     form.deepseek_expansion_model = settings.deepseek_expansion_model || 'deepseek-chat'
     form.deepseek_extraction_model = settings.deepseek_extraction_model || 'deepseek-chat'
 
+    form.kimi_expansion_model = settings.kimi_expansion_model || 'kimi-latest'
+    form.kimi_extraction_model = settings.kimi_extraction_model || 'kimi-latest'
+
     // 记录各家是否已配置 key（决定是否自动拉取模型列表）
     savedKeyMask.gemini = settings.gemini_api_key_masked || ''
     savedKeyMask.claude = settings.claude_api_key_masked || ''
     savedKeyMask.openai = settings.openai_api_key_masked || ''
     savedKeyMask.deepseek = settings.deepseek_api_key_masked || ''
+    savedKeyMask.kimi = settings.kimi_api_key_masked || ''
     savedKeyMask.openai_compatible = settings.local_api_key_masked || ''
 
     form.local_base_url = settings.local_base_url || 'http://localhost:11434/v1'
@@ -599,6 +644,9 @@ async function testConnection() {
     } else if (form.provider === 'deepseek') {
       payload.deepseek_api_key = form.deepseek_api_key
       payload.model = form.deepseek_extraction_model
+    } else if (form.provider === 'kimi') {
+      payload.kimi_api_key = form.kimi_api_key
+      payload.model = form.kimi_extraction_model
     } else if (form.provider === 'openai_compatible') {
       payload.local_base_url = form.local_base_url
       payload.local_api_key = form.local_api_key
@@ -634,6 +682,10 @@ async function save() {
       deepseek_api_key: form.deepseek_api_key.trim() || undefined,
       deepseek_expansion_model: form.deepseek_expansion_model,
       deepseek_extraction_model: form.deepseek_extraction_model,
+
+      kimi_api_key: form.kimi_api_key.trim() || undefined,
+      kimi_expansion_model: form.kimi_expansion_model,
+      kimi_extraction_model: form.kimi_extraction_model,
 
       local_base_url: form.local_base_url.trim(),
       local_api_key: form.local_api_key.trim() || undefined,

@@ -62,12 +62,14 @@ export default {
   'settings.providerClaude': 'Claude (Anthropic)',
   'settings.providerOpenAI': 'ChatGPT (OpenAI)',
   'settings.providerDeepSeek': 'DeepSeek',
+  'settings.providerKimi': 'Kimi (Moonshot AI)',
   'settings.providerLocal': 'Local Model (Ollama / vLLM)',
 
   // API Key
   'settings.geminiApiKey': 'Gemini API Key',
   'settings.claudeApiKey': 'Claude API Key',
   'settings.deepseekApiKey': 'DeepSeek API Key',
+  'settings.kimiApiKey': 'Kimi API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
   'settings.apiKeyHint': 'API Key is stored locally only and never uploaded to any server',
   'settings.apiKeyLocalHint': 'API Key is stored locally',
