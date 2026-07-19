@@ -17,19 +17,22 @@ class LLMError(Exception):
 
 
 def classify_llm_error(e: Exception, language: str = "zh") -> str:
-    """将底层异常翻译为用户可读的错误信息。"""
+    """将底层异常翻译为用户可读的错误信息。
+    注意匹配必须精确：不能用宽泛的 "invalid" 判定 Key 无效——
+    参数错误（如 invalid temperature）也含该词，会造成误报。"""
     s = str(e)
     sl = s.lower()
     zh = language != "en"
-    if "429" in s or "quota" in sl or "rate" in sl:
+    if "429" in s or "quota" in sl or "rate limit" in sl or "rate_limit" in sl:
         return ("API 调用超限（429），请稍后再试或检查配额。" if zh
                 else "API rate limit exceeded (429). Please retry later or check your quota.")
-    if "timeout" in sl or "deadline" in sl:
-        return ("网络超时，请检查网络连接后重试。" if zh
-                else "Network timeout. Please check your connection and retry.")
-    if "api_key" in sl or "401" in s or "authentication" in sl or "invalid" in sl:
+    if ("401" in s or "unauthorized" in sl or "authentication" in sl
+            or "api key" in sl or "api_key" in sl or "invalid x-api-key" in sl):
         return ("API Key 无效，请在设置中检查配置。" if zh
                 else "Invalid API key. Please check it in Settings.")
+    if "timeout" in sl or "deadline" in sl or "timed out" in sl:
+        return ("网络超时，请检查网络连接后重试。" if zh
+                else "Network timeout. Please check your connection and retry.")
     if "safety" in sl or "blocked" in sl:
         return ("查询内容被安全过滤器拦截，请调整关键词。" if zh
                 else "The request was blocked by a safety filter. Please adjust your query.")
@@ -97,7 +100,8 @@ def stream_query(
         except Exception as e:
             error_str = str(e)
             logger.error(f"LLM API 错误 (第{attempt+1}次): {error_str}", exc_info=True)
-            is_rate_limit = "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()
+            el = error_str.lower()
+            is_rate_limit = "429" in error_str or "quota" in el or "rate limit" in el or "rate_limit" in el
             # 未输出任何内容且是限速错误 → 等待后重试；否则直接报错
             if is_rate_limit and not yielded and attempt < MAX_RETRIES:
                 logger.info(f"限速，{RETRY_WAIT}s 后重试 ({attempt+1}/{MAX_RETRIES})")

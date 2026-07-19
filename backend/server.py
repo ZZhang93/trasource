@@ -78,7 +78,7 @@ logger = logging.getLogger("backend")
 # ────────────────────────────────────────────────
 app = FastAPI(
     title="史料检索引擎 API",
-    version="1.3.1",
+    version="1.3.2",
     docs_url="/docs",
 )
 
@@ -111,7 +111,7 @@ app.include_router(history_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.3.1"}
+    return {"status": "ok", "version": "1.3.2"}
 
 
 # ────────────────────────────────────────────────

@@ -71,6 +71,43 @@ _MIGRATION_MAP = {
 }
 
 
+def _is_stale_prompt_override(text, current_default: str) -> bool:
+    """override 与当前默认或任一历史默认完全一致 → 视为「未自定义」。
+    （旧版界面保存设置时会把未修改的默认提示词误存为自定义覆盖，
+    这会永久遮蔽默认提示词的后续升级。）"""
+    from core.legacy_prompts import LEGACY_DEFAULT_PROMPTS
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t == current_default.strip():
+        return True
+    return any(t == lp.strip() for lp in LEGACY_DEFAULT_PROMPTS)
+
+
+def _drop_stale_prompt_overrides(d: dict) -> bool:
+    """清除 d 中误存的提示词覆盖，返回是否有改动。"""
+    from core.query_expander import EXPANSION_PROMPT
+    changed = False
+    if _is_stale_prompt_override(d.get("system_prompt_override"), config.SYSTEM_PROMPT):
+        d["system_prompt_override"] = ""
+        changed = True
+    if _is_stale_prompt_override(d.get("expansion_prompt_override"), EXPANSION_PROMPT):
+        d["expansion_prompt_override"] = ""
+        changed = True
+    return changed
+
+
+def _heal_settings_file():
+    """启动时对 settings.json 做一次性迁移清理。"""
+    s = sm.load_settings(SETTINGS_FILE)
+    if s and _drop_stale_prompt_overrides(s):
+        sm.save_settings(SETTINGS_FILE, s)
+        logger.info("已清理误存为自定义的默认提示词（提示词升级现可生效）")
+
+
+_heal_settings_file()
+
+
 def _get_settings() -> dict:
     s = sm.load_settings(SETTINGS_FILE)
     # 迁移旧字段名
@@ -180,6 +217,9 @@ async def update_settings(req: SettingsUpdateRequest):
     # 清理旧字段
     for old_key in _MIGRATION_MAP:
         merged.pop(old_key, None)
+
+    # 与默认一致的提示词不作为自定义覆盖保存
+    _drop_stale_prompt_overrides(merged)
 
     try:
         sm.save_settings(SETTINGS_FILE, merged)

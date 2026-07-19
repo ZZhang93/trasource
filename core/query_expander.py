@@ -24,16 +24,17 @@ EXPANSION_PROMPT = """你是一位中国近现代史研究专家，精通1949年
 4. 当时官方和媒体使用什么术语描述此事？有没有特定的政策名称或运动名称？
 5. 有哪些关联事件或背景政策？
 
-基于上述分析，生成10-20个在该类文献中实际会出现的搜索词，标注权重（1-10）。
+基于上述分析，生成10-20个搜索词，标注权重（1-10）。
 权重10=核心事件/政策名，8-9=核心人物和地点，6-7=相关政策术语，4-5=背景词。
-搜索词必须具体（优先使用专有名词、地名、人名、政策名），避免过于宽泛的通用词。
-请根据文献类型调整用语风格：
-- 报纸：使用当时的官方称谓和报道用语
-- 书籍/论文：使用学术规范表述
-- 访谈：考虑口语化和具体情景描述
 
-直接输出JSON对象，不加任何markdown格式：
-{{"intent":"检索意图一句话","time_range":"起止年份或null","terms":{{"词1":权重,"词2":权重}}}}"""
+重要：搜索词将用于全文逐字匹配（不是语义检索），必须遵守——
+- 每个词必须是文献原文中会连续出现的字串，中文以2-6字为宜；禁止整句，禁止标点和空格
+- 优先专有名词：地名、人名、机构名、政策名、运动名；避免"历史""发展""情况"这类宽泛词
+- 同一实体的不同写法分别列出（全称/简称、今名/当时称谓），如"计划生育"与"计生"
+- 按文献类型调整用语：报纸用当时的官方称谓和报道用语，书籍/论文用学术表述，访谈考虑口语说法
+
+直接输出合法JSON对象（英文双引号，权重为数字），不加任何markdown代码块标记：
+{{"intent":"检索意图一句话","time_range":"起止年份如1958-1962，不确定则null","terms":{{"词1":权重,"词2":权重}}}}"""
 
 EXPANSION_PROMPT_EN = """You are an expert in modern world history, particularly post-1900 political, economic, and social history.
 
@@ -49,12 +50,17 @@ Before generating search terms, mentally analyze (do not output the analysis):
 4. What terminology did contemporary media and officials use to describe this?
 5. Related events or background policies?
 
-Based on your analysis, generate 10-20 search terms that would actually appear in those document types, with weights (1-10).
+Based on your analysis, generate 10-20 search terms with weights (1-10).
 Weight 10 = core event/policy names, 8-9 = key people and places, 6-7 = related policy terms, 4-5 = background terms.
-Terms must be specific (prefer proper nouns, place names, person names, policy names). Avoid overly generic words.
 
-Output a JSON object directly, no markdown formatting:
-{{"intent":"search intent in one sentence","time_range":"year range or null","terms":{{"term1":weight,"term2":weight}}}}"""
+Important: terms are matched as literal substrings in full text (not semantic search) —
+- Each term must be a word or short phrase (1-3 words) that would literally appear in the documents; no full sentences, no punctuation
+- Prefer proper nouns: places, persons, institutions, policy/campaign names; avoid generic words like "history" or "development"
+- List different spellings/forms of the same entity separately (full name vs. abbreviation, modern vs. contemporary name)
+- Match the register of the document types: period-appropriate press terminology for newspapers, academic phrasing for books/papers
+
+Output a valid JSON object directly (double quotes, numeric weights), no markdown code fences:
+{{"intent":"search intent in one sentence","time_range":"year range like 1958-1962, or null","terms":{{"term1":weight,"term2":weight}}}}"""
 
 EXPANSION_PROMPT_MIXED = """你是一位精通中英文历史文献的研究专家。
 You are an expert in both Chinese and English historical documents.
@@ -71,13 +77,17 @@ You are an expert in both Chinese and English historical documents.
 4. 当时的官方术语？/ Contemporary official terminology?
 5. 关联事件或背景？/ Related events or context?
 
-生成10-20个在该类文献中实际出现过的搜索词（中英文混合），标注权重（1-10）。
+生成10-20个搜索词（中英文混合），标注权重（1-10）。
 Generate 10-20 search terms (mixed Chinese/English) with weights (1-10).
-优先使用专有名词、地名、人名、政策名，避免通用词。
-Prefer proper nouns, place names, person names, policy names. Avoid generic words.
 
-直接输出JSON对象，不加任何markdown格式：
-{{"intent":"检索意图/search intent","time_range":"时间范围或null","terms":{{"词1/term1":权重,"词2/term2":权重}}}}"""
+重要 / Important：搜索词用于全文逐字匹配（非语义检索）——
+- 中文词以2-6字为宜，英文为1-3个单词的短语；禁止整句和标点
+  Terms must literally appear in documents; no full sentences or punctuation
+- 优先专有名词（地名、人名、机构、政策名），避免宽泛词；同一实体的中英文写法分别列出
+  Prefer proper nouns; list Chinese and English forms of the same entity separately
+
+直接输出合法JSON对象（英文双引号），不加任何markdown代码块标记：
+{{"intent":"检索意图/search intent","time_range":"起止年份或null","terms":{{"词1/term1":权重,"词2/term2":权重}}}}"""
 
 
 def _parse_json(raw: str) -> dict:

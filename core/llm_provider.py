@@ -232,27 +232,46 @@ class OpenAIProvider(LLMProvider):
         msgs.append({"role": "user", "content": prompt})
         return msgs
 
+    def _chat_create(self, messages: list, temperature: float, max_tokens: int, stream: bool):
+        """
+        发起补全请求，遇到参数限制自动降级重试：
+        - 部分模型只允许默认 temperature（如 Kimi K2 思考系、OpenAI o 系推理模型），
+          报 400 invalid temperature → 去掉 temperature 用模型默认值重试
+        - OpenAI 新推理模型要求 max_completion_tokens 而非 max_tokens → 换参名重试
+        """
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+        last_err = None
+        for _ in range(3):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                if "temperature" in msg and "temperature" in kwargs:
+                    kwargs.pop("temperature")
+                    continue
+                if "max_tokens" in msg and "max_tokens" in kwargs:
+                    kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+                    continue
+                raise
+        raise last_err
+
     def generate_stream(self, prompt, system_prompt=None, temperature=0.1, max_tokens=8192):
         messages = self._build_messages(prompt, system_prompt)
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+        response = self._chat_create(messages, temperature, max_tokens, stream=True)
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
     def generate(self, prompt, system_prompt=None, temperature=0.1, max_tokens=8192):
         messages = self._build_messages(prompt, system_prompt)
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        response = self._chat_create(messages, temperature, max_tokens, stream=False)
         return response.choices[0].message.content
 
     def chat_stream(self, messages, system_prompt=None, temperature=0.7, max_tokens=4096):
@@ -260,13 +279,7 @@ class OpenAIProvider(LLMProvider):
         if system_prompt:
             oai_messages.append({"role": "system", "content": system_prompt})
         oai_messages.extend(messages)
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=oai_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+        response = self._chat_create(oai_messages, temperature, max_tokens, stream=True)
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content

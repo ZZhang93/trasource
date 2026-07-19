@@ -694,8 +694,13 @@ async function save() {
 
       proxy_url: form.proxy_url.trim(),
       top_k: form.top_k,
-      system_prompt_override: form.system_prompt_override,
-      expansion_prompt_override: form.expansion_prompt_override,
+      // 与默认提示词一致时存空串（视为未自定义），默认提示词升级才能生效
+      system_prompt_override:
+        form.system_prompt_override.trim() === defaultPrompts.extraction.trim()
+          ? '' : form.system_prompt_override,
+      expansion_prompt_override:
+        form.expansion_prompt_override.trim() === defaultPrompts.expansion.trim()
+          ? '' : form.expansion_prompt_override,
     })
     window.dispatchEvent(new CustomEvent('settings-updated'))
     setTimeout(() => { saving.value = false }, 500)

@@ -32,7 +32,7 @@ export default {
   'sidebar.library': 'Library',
   'sidebar.settings': 'Settings',
   'sidebar.newProjectTitle': 'New Project',
-  'sidebar.projectNamePlaceholder': 'Project name (e.g., Great Leap Forward Research)',
+  'sidebar.projectNamePlaceholder': 'Project name',
   'sidebar.projectDescPlaceholder': 'Description (optional)',
   'sidebar.createFailed': 'Creation failed',
   'sidebar.countWan': '{n}k',

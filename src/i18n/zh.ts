@@ -32,7 +32,7 @@ export default {
   'sidebar.library': '文献库',
   'sidebar.settings': '设置',
   'sidebar.newProjectTitle': '新建项目',
-  'sidebar.projectNamePlaceholder': '项目名称（例：大跃进研究）',
+  'sidebar.projectNamePlaceholder': '项目名称',
   'sidebar.projectDescPlaceholder': '描述（可选）',
   'sidebar.createFailed': '创建失败',
   'sidebar.countWan': '{n}万',
