@@ -37,7 +37,12 @@
     </div>
 
     <div class="project-list">
-      <div v-if="projectStore.loading" class="muted-text">{{ t('sidebar.loading') }}</div>
+      <!-- 后端未就绪时明确提示，避免误显示「暂无项目」让用户以为项目丢失 -->
+      <div v-if="!backend.ready && !backend.failed" class="empty-hint">
+        <span class="starting-dot">◌</span> {{ t('sidebar.backendStarting') }}
+      </div>
+      <div v-else-if="backend.failed" class="empty-hint">{{ t('sidebar.backendOffline') }}</div>
+      <div v-else-if="projectStore.loading" class="muted-text">{{ t('sidebar.loading') }}</div>
 
       <div
         v-for="project in sortedProjects"
@@ -71,7 +76,7 @@
         </button>
       </div>
 
-      <div v-if="!projectStore.loading && projectStore.projects.length === 0" class="empty-hint">
+      <div v-if="backend.ready && !projectStore.loading && projectStore.projects.length === 0" class="empty-hint">
         {{ t('sidebar.emptyProjects') }}
       </div>
     </div>
@@ -187,6 +192,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useSearchStore } from '@/stores/search'
+import { useBackendStore } from '@/stores/backend'
 import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
 import ImportDialog from '@/components/dialogs/ImportDialog.vue'
@@ -201,6 +207,7 @@ const router = useRouter()
 const route = useRoute()
 const projectStore = useProjectStore()
 const searchStore = useSearchStore()
+const backend = useBackendStore()
 
 // 历史记录
 const recentHistory = ref<any[]>([])
@@ -514,6 +521,8 @@ function formatCount(n: number): string {
 .sort-btn { color: var(--text-muted); display: flex; align-items: center; }
 
 .empty-hint { font-size: 12px; color: var(--text-muted); padding: 4px 8px; }
+.starting-dot { display: inline-block; animation: spin 2s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .muted-text { font-size: 12px; color: var(--text-muted); padding: 4px 8px; }
 
 .project-actions { padding: 2px 8px 8px; }

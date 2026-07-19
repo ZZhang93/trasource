@@ -19,6 +19,8 @@ export default {
   'sidebar.sortName': 'Current: Sort by Name',
   'sidebar.newProject': 'New Project',
   'sidebar.loading': 'Loading...',
+  'sidebar.backendStarting': 'Starting backend service…',
+  'sidebar.backendOffline': 'Backend not responding. Please restart the app.',
   'sidebar.emptyProjects': 'No projects yet. Click + to create one.',
   'sidebar.importLiterature': 'Import Documents',
   'sidebar.recentSearch': 'Recent Searches',

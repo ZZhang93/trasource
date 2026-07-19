@@ -25,21 +25,29 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import StatusBar from '@/components/layout/StatusBar.vue'
 import { useProjectStore } from '@/stores/project'
+import { useBackendStore } from '@/stores/backend'
 import { useUiStore } from '@/stores/ui'
 
 const projectStore = useProjectStore()
+const backend = useBackendStore()
 const ui = useUiStore()
 const router = useRouter()
 const sidebarRef = ref<InstanceType<typeof Sidebar> | null>(null)
 
-onMounted(async () => {
-  await projectStore.fetchProjects()
+onMounted(() => {
+  // 等后端健康检查通过后再拉项目列表（sidecar 冷启动需 20-40s，
+  // 过早拉取会拉空列表，让用户误以为项目丢失）
+  backend.start()
   window.addEventListener('keydown', handleKeydown)
+})
+
+watch(() => backend.ready, (r) => {
+  if (r) projectStore.fetchProjects()
 })
 
 onUnmounted(() => {

@@ -16,17 +16,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useProjectStore } from '@/stores/project'
+import { useBackendStore } from '@/stores/backend'
 import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
 
 const projectStore = useProjectStore()
-const backendStatusKey = ref('status.connecting')
-const backendStatus = computed(() => t(backendStatusKey.value))
-const backendOk = ref(false)
+const backend = useBackendStore()
+const backendOk = computed(() => backend.ready)
+const backendStatus = computed(() =>
+  t(backend.ready ? 'status.ready' : backend.failed ? 'status.offline' : 'status.starting')
+)
 const providerLabel = ref('Gemini')
 const expansionModelLabel = ref('')
 const extractionModelLabel = ref('')
@@ -117,40 +120,19 @@ function updateFromSettings(settings: any) {
   extractionModelLabel.value = getModelLabel(p, extKey)
 }
 
+async function loadSettingsInfo() {
+  try {
+    const settings = await api.get<any>('/api/settings')
+    updateFromSettings(settings)
+  } catch {}
+}
+
+// 后端就绪后加载模型信息（就绪状态由 backend store 统一轮询）
+watch(() => backend.ready, (r) => { if (r) loadSettingsInfo() }, { immediate: true })
+
 onMounted(() => {
-  let attempts = 0
-  const MAX = 30
-
-  const check = async () => {
-    attempts++
-    try {
-      await api.get('/api/health')
-      backendStatusKey.value = 'status.ready'
-      backendOk.value = true
-      const settings = await api.get<any>('/api/settings')
-      updateFromSettings(settings)
-    } catch {
-      if (attempts < MAX) {
-        backendStatusKey.value = 'status.starting'
-        backendOk.value = false
-        setTimeout(check, 3000)
-      } else {
-        backendStatusKey.value = 'status.offline'
-        backendOk.value = false
-      }
-    }
-  }
-
-  check()
-
-  const onSettingsUpdated = async () => {
-    try {
-      const settings = await api.get<any>('/api/settings')
-      updateFromSettings(settings)
-    } catch {}
-  }
-  window.addEventListener('settings-updated', onSettingsUpdated)
-  onUnmounted(() => window.removeEventListener('settings-updated', onSettingsUpdated))
+  window.addEventListener('settings-updated', loadSettingsInfo)
+  onUnmounted(() => window.removeEventListener('settings-updated', loadSettingsInfo))
 })
 </script>
 

@@ -19,6 +19,8 @@ export default {
   'sidebar.sortName': '当前：名称排序',
   'sidebar.newProject': '新建项目',
   'sidebar.loading': '加载中…',
+  'sidebar.backendStarting': '正在启动后端服务…',
+  'sidebar.backendOffline': '后端服务未响应，请重启应用',
   'sidebar.emptyProjects': '暂无项目，点击 + 新建',
   'sidebar.importLiterature': '导入文献',
   'sidebar.recentSearch': '最近检索',
