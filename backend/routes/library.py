@@ -64,8 +64,18 @@ async def upload_file(request: Request, file: UploadFile = File(None)):
     return {"path": dest, "filename": os.path.basename(dest)}
 
 
+def _sanitize_filename(filename: str) -> str:
+    """只保留文件名本身，剥离目录成分，防止路径穿越写入 UPLOAD_DIR 之外。
+    兼容 Windows 风格分隔符（POSIX 的 os.path.basename 不认 \\）。"""
+    name = filename.replace("\\", "/").split("/")[-1]
+    if name in ("", ".", ".."):
+        name = "upload"
+    return name
+
+
 def _unique_dest(filename: str) -> str:
-    """生成不重复的目标路径。"""
+    """生成不重复的目标路径（filename 先消毒，保证结果一定落在 UPLOAD_DIR 内）。"""
+    filename = _sanitize_filename(filename)
     dest = os.path.join(UPLOAD_DIR, filename)
     base, ext = os.path.splitext(filename)
     counter = 1
