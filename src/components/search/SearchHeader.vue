@@ -1,24 +1,38 @@
 <template>
   <div class="search-header">
     <div class="search-box-wrap">
-      <span class="search-icon">🔍</span>
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7.2" cy="7.2" r="4.6" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M10.6 10.6L13.6 13.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
       <input
         v-model="searchStore.query"
         class="search-input"
         :placeholder="t('search.placeholder')"
         @keydown.enter="$emit('search')"
       />
-      <select v-model="searchStore.language" class="lang-select">
+      <button
+        v-if="searchStore.query"
+        class="clear-btn"
+        :title="t('common.clear')"
+        :aria-label="t('common.clear')"
+        @click="searchStore.query = ''"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <select v-model="searchStore.language" class="lang-select" :aria-label="t('search.langZh')">
         <option value="zh">{{ t('search.langZh') }}</option>
         <option value="en">English</option>
         <option value="mixed">{{ t('search.langMixed') }}</option>
       </select>
       <button
-        class="btn-primary"
+        class="btn-primary search-btn"
         @click="$emit('search')"
         :disabled="!searchStore.query.trim() || searchStore.isExpanding || searchStore.isSearching"
       >
-        {{ searchStore.isExpanding ? t('search.aiAnalyzing') : searchStore.isSearching ? t('search.searching') : t('search.searchBtn') }}
+        {{ searchStore.isExpanding || searchStore.isSearching ? t('search.searching') : t('search.searchBtn') }}
       </button>
     </div>
 
@@ -137,14 +151,41 @@ defineExpose({ loadAvailableFiles, collapseAdvanced })
 </script>
 
 <style scoped>
-.search-header { padding: 14px 20px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.search-box-wrap { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px; transition: border-color var(--transition); }
-.search-box-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(35,131,226,0.12); }
-.search-icon { font-size: 16px; }
-.search-input { flex: 1; border: none; outline: none; background: transparent; font-size: 15px; color: var(--text); font-family: var(--font-ui); }
-.lang-select { border: none; outline: none; background: transparent; font-size: 12px; color: var(--text-muted); cursor: pointer; }
-.advanced-toggle { font-size: 11px; color: var(--text-muted); padding: 6px 2px 8px; cursor: pointer; user-select: none; }
-.advanced-toggle:hover { color: var(--accent); }
+.search-header { padding: 14px 20px 0; border-bottom: 1px solid var(--line); flex-shrink: 0; background: var(--bg); }
+.search-box-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md); padding: 5px 5px 5px 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.search-box-wrap:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+.search-icon { color: var(--text-3); flex-shrink: 0; }
+.search-box-wrap:focus-within .search-icon { color: var(--accent); }
+.search-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: 14px; color: var(--text); font-family: var(--font-ui);
+  height: 32px;
+}
+.search-input::placeholder { color: var(--text-3); }
+.clear-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  border: none; background: transparent; border-radius: 50%;
+  color: var(--text-3); cursor: pointer; transition: background var(--transition), color var(--transition);
+}
+.clear-btn:hover { background: var(--surface-3); color: var(--text); }
+.lang-select {
+  border: none; outline: none; background: transparent;
+  font-size: 12px; color: var(--text-2); cursor: pointer;
+  font-family: var(--font-ui); flex-shrink: 0;
+}
+.search-btn { min-width: 64px; }
+.advanced-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text-3); padding: 8px 2px 10px;
+  cursor: pointer; user-select: none;
+}
+.advanced-toggle:hover { color: var(--text); }
 .advanced-panel { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
 .adv-row { display: flex; align-items: center; gap: 8px; }
 .adv-row > label { font-size: 11px; color: var(--text-muted); width: 58px; flex-shrink: 0; }

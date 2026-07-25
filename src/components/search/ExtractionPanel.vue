@@ -1,8 +1,10 @@
 <template>
   <div v-if="aiOutput || isExtracting || extractError" class="extraction-panel">
     <div class="extraction-panel-header">
-      <span>{{ t('extraction.title') }}</span>
-      <span v-if="isExtracting" class="streaming-dot">●</span>
+      <span class="ext-title">{{ t('extraction.title') }}</span>
+      <span v-if="isExtracting" class="streaming">
+        <span class="streaming-dot"></span>{{ t('extraction.streaming') }}
+      </span>
       <template v-else>
         <span class="model-tag">{{ modelName || 'AI' }}</span>
         <button v-if="aiOutput" class="copy-btn" @click.stop="copyOutput" :class="{ copied: justCopied }">
@@ -13,12 +15,15 @@
 
     <!-- 错误横幅（独立于正文展示） -->
     <div v-if="extractError" class="error-banner">
-      <span>⚠️ {{ extractError }}</span>
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M8 4.8v3.6M8 11h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span>{{ extractError }}</span>
     </div>
 
     <div v-if="aiOutput || isExtracting" class="extraction-body">
-      <div class="extraction-text md-body" v-html="renderedOutput"></div>
-      <span v-if="isExtracting" class="cursor">▋</span>
+      <div class="extraction-text md-body" v-html="renderedOutput"></div><span v-if="isExtracting" class="cursor"></span>
     </div>
 
     <div v-if="!isExtracting && sourceRecords.length > 0" class="sources-section">
@@ -78,44 +83,97 @@ async function copyOutput() {
 </script>
 
 <style scoped>
-.extraction-panel { border: 1px solid var(--border); border-radius: var(--radius-md); }
-.extraction-panel-header { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: var(--sidebar-bg); font-size: 13px; font-weight: 500; border-bottom: 1px solid var(--border); border-radius: var(--radius-md) var(--radius-md) 0 0; }
-.model-tag { font-size: 11px; color: var(--text-muted); background: var(--hover-bg); padding: 2px 6px; border-radius: 3px; margin-left: auto; }
-.streaming-dot { margin-left: auto; color: var(--accent); animation: blink 1s infinite; font-size: 10px; }
-@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-.copy-btn { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text-muted); cursor: pointer; }
+.extraction-panel { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--bg); }
+.extraction-panel-header {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.ext-title { font-size: 12.5px; font-weight: 500; color: var(--text); }
+.model-tag {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3);
+  margin-left: auto;
+}
+.streaming { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--accent); }
+.streaming-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  animation: ping 1.4s ease-out infinite;
+}
+@keyframes ping {
+  0%   { box-shadow: 0 0 0 0 rgba(47,107,255,0.35); }
+  70%  { box-shadow: 0 0 0 5px rgba(47,107,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(47,107,255,0); }
+}
+.copy-btn {
+  height: 24px; padding: 0 9px; font-size: 11.5px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--text-2); cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
 .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
-.copy-btn.copied { border-color: #38a169; color: #38a169; }
-.error-banner { padding: 10px 14px; font-size: 13px; color: #c53030; background: #fff5f5; border-bottom: 1px solid var(--border); }
-.extraction-body { padding: 14px 16px; }
-.extraction-text { font-family: var(--font-serif); font-size: 14px; line-height: 1.9; word-break: break-word; color: var(--text); user-select: text; }
-.cursor { display: inline-block; animation: blink 0.8s infinite; color: var(--accent); }
+.copy-btn.copied { border-color: var(--success); color: var(--success); }
+.error-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; font-size: 12.5px; color: var(--danger);
+  background: var(--danger-soft); border-bottom: 1px solid var(--line);
+}
 
-/* Markdown 元素样式 */
-.md-body :deep(p) { margin: 0 0 10px; }
+/* 阅读面：舒适行距，最大行宽保证可读性 */
+.extraction-body { padding: 16px 18px 18px; }
+.extraction-text {
+  display: inline; font-size: 14px; line-height: 1.8;
+  word-break: break-word; color: var(--text); user-select: text;
+}
+.cursor {
+  display: inline-block; width: 2px; height: 15px; vertical-align: -3px;
+  background: var(--accent); margin-left: 2px; animation: blink 1s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Markdown */
+.md-body :deep(p) { margin: 0 0 12px; }
 .md-body :deep(p:last-child) { margin-bottom: 0; }
-.md-body :deep(ul), .md-body :deep(ol) { padding-left: 22px; margin: 0 0 10px; }
-.md-body :deep(li) { margin-bottom: 4px; }
-.md-body :deep(h1), .md-body :deep(h2), .md-body :deep(h3) { font-size: 15px; font-weight: 700; margin: 14px 0 8px; }
-.md-body :deep(blockquote) { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 10px 0; color: var(--text-muted); }
-.md-body :deep(code) { font-family: var(--font-mono); font-size: 12px; background: var(--hover-bg); padding: 1px 5px; border-radius: 3px; }
-.md-body :deep(pre) { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow-x: auto; margin: 10px 0; }
+.md-body :deep(ul), .md-body :deep(ol) { padding-left: 20px; margin: 0 0 12px; }
+.md-body :deep(li) { margin-bottom: 6px; }
+.md-body :deep(h1), .md-body :deep(h2), .md-body :deep(h3) {
+  font-size: 13px; font-weight: 600; color: var(--text-2); margin: 18px 0 8px;
+}
+.md-body :deep(blockquote) { border-left: 2px solid var(--line-strong); padding: 0 0 0 12px; margin: 12px 0; color: var(--text-2); }
+.md-body :deep(code) { font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: var(--radius-sm); }
+.md-body :deep(pre) { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; overflow-x: auto; margin: 12px 0; }
 .md-body :deep(pre code) { background: none; padding: 0; }
-.md-body :deep(strong) { font-weight: 700; }
-.md-body :deep(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+/* 出处（提示词以 **加粗** 标出）→ 等宽小胶囊，与正文明确区分 */
+.md-body :deep(strong) {
+  display: inline-block;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-weight: 400; font-size: 11px; line-height: 1.5;
+  color: var(--text-2); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 1px 6px; margin: 0 1px; vertical-align: 1px;
+  white-space: normal;
+}
+.md-body :deep(hr) { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 
-.sources-section { border-top: 1px solid var(--border); }
-.sources-title { padding: 8px 14px 6px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--sidebar-bg); border-bottom: 1px solid var(--border); }
-.sources-list { padding: 0; }
-.source-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border); transition: background 150ms; }
-.source-item:last-child { border-bottom: none; }
-.source-item:hover { background: var(--accent-soft); }
-.source-num { color: white; background: var(--accent); border-radius: 3px; padding: 1px 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
-.source-info { flex: 1; min-width: 0; }
-.source-top-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.source-file { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; font-size: 12px; }
-.source-date { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
-.source-snippet { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-view-btn { flex-shrink: 0; font-size: 11px; color: var(--accent); font-weight: 500; padding: 3px 7px; border: 1px solid var(--accent); border-radius: 3px; transition: background 150ms; }
-.source-item:hover .source-view-btn { background: var(--accent); color: white; }
+/* 引用来源列表 */
+.sources-section { border-top: 1px solid var(--line); background: var(--surface); }
+.sources-title {
+  padding: 9px 14px 6px; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+}
+.sources-list { padding: 0 0 4px; }
+.source-item {
+  display: flex; align-items: center; gap: 10px; padding: 7px 14px;
+  cursor: pointer; transition: background var(--transition);
+}
+.source-item:hover { background: var(--surface-3); }
+.source-num {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; color: var(--text-3); flex-shrink: 0; width: 16px;
+}
+.source-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.source-top-row { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+.source-file { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; font-size: 12px; }
+.source-date { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-3); font-size: 11px; flex-shrink: 0; }
+.source-snippet { color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.source-view-btn { flex-shrink: 0; font-size: 11px; color: var(--accent); padding: 0; opacity: 0; transition: opacity var(--transition); }
+.source-item:hover .source-view-btn { opacity: 1; }
 </style>

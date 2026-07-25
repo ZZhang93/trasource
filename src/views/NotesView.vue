@@ -70,13 +70,13 @@
             <button class="del-confirm-yes" @click="doDelete">{{ t('common.delete') }}</button>
             <button class="btn-ghost" style="font-size:12px" @click="deleteConfirming = false">{{ t('common.cancel') }}</button>
           </template>
-          <button v-else class="delete-btn" @click="deleteConfirming = true" :title="t('notes.deleteNote')" :aria-label="t('notes.deleteNote')">🗑️</button>
+          <button v-else class="delete-btn" @click="deleteConfirming = true" :title="t('notes.deleteNote')" :aria-label="t('notes.deleteNote')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.2 4.5V3.2a.7.7 0 0 1 .7-.7h2.2a.7.7 0 0 1 .7.7v1.3M4.4 4.5l.5 8.2a.8.8 0 0 0 .8.8h4.6a.8.8 0 0 0 .8-.8l.5-8.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
 
       <!-- 标签行 -->
       <div class="tags-row">
-        <span class="tags-label">🏷️</span>
+        <svg class="tags-label" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 7.3V3.4a.8.8 0 0 1 .8-.8h3.9c.2 0 .4.1.6.2l5 5a.8.8 0 0 1 0 1.2l-3.9 3.9a.8.8 0 0 1-1.2 0l-5-5a.8.8 0 0 1-.2-.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5.4" cy="5.4" r="1" fill="currentColor"/></svg>
         <input
           v-model="editTags"
           class="tags-input"
@@ -112,7 +112,10 @@
 
     <!-- 无笔记选中 -->
     <div v-else class="editor-empty">
-      <div class="empty-icon">📝</div>
+      <svg class="empty-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M6 3.5h7.6L18.5 8.4V20.5H6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M13.4 3.7v4.6h4.6M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
       <p>{{ t('notes.selectOrCreate') }}</p>
       <button class="btn-primary" @click="handleNewNote">{{ t('notes.newNoteBtn') }}</button>
     </div>
@@ -620,7 +623,7 @@ function formatDate(dt: string): string {
   color: var(--text-muted);
   background: var(--bg);
 }
-.empty-icon { font-size: 48px; opacity: 0.35; }
+.empty-icon { color: var(--text-3); opacity: 0.8; }
 .editor-empty p { font-size: 14px; }
 
 /* Toast */

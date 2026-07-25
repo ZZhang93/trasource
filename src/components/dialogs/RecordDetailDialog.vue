@@ -13,22 +13,22 @@
       <!-- 元数据行 -->
       <div class="meta-row">
         <span v-if="record.date || record.year" class="meta-tag">
-          📅 {{ record.date || record.year }}
+          {{ record.date || record.year }}
         </span>
-        <span v-if="record.author" class="meta-tag">✍️ {{ record.author }}</span>
+        <span v-if="record.author" class="meta-tag">{{ record.author }}</span>
         <span v-if="record.title && record.title !== record.source_file" class="meta-tag">
-          📖 {{ record.title }}
+          {{ record.title }}
         </span>
-        <span v-if="record.publisher" class="meta-tag">🏛️ {{ record.publisher }}</span>
+        <span v-if="record.publisher" class="meta-tag">{{ record.publisher }}</span>
         <span v-if="record.pub_year" class="meta-tag">{{ t('detail.year', { year: record.pub_year }) }}</span>
         <span v-if="record.page || record.page_num" class="meta-tag">
           {{ t('detail.page', { page: record.page || record.page_num }) }}
         </span>
         <span v-if="record.chapter" class="meta-tag">{{ record.chapter }}</span>
         <span v-if="record.section" class="meta-tag">{{ record.section }}</span>
-        <span v-if="record.interviewee" class="meta-tag">🎙️ {{ record.interviewee }}</span>
-        <span v-if="record.interview_date" class="meta-tag">📅 {{ record.interview_date }}</span>
-        <span v-if="record.interview_location" class="meta-tag">📍 {{ record.interview_location }}</span>
+        <span v-if="record.interviewee" class="meta-tag">{{ record.interviewee }}</span>
+        <span v-if="record.interview_date" class="meta-tag">{{ record.interview_date }}</span>
+        <span v-if="record.interview_location" class="meta-tag">{{ record.interview_location }}</span>
         <span v-if="record.relevance_score" class="meta-tag score-tag">
           {{ t('detail.relevanceScore', { score: record.relevance_score }) }}
         </span>
@@ -91,12 +91,12 @@ function emitCreateNote() {
 
 const docTypeLabel = computed(() => {
   const map: Record<string, string> = {
-    newspaper: `📰 ${t('detail.newspaper')}`,
-    book: `📚 ${t('detail.book')}`,
-    paper: `📄 ${t('detail.paper')}`,
-    interview: `🎙️ ${t('detail.interview')}`,
+    newspaper: t('detail.newspaper'),
+    book: t('detail.book'),
+    paper: t('detail.paper'),
+    interview: t('detail.interview'),
   }
-  return map[props.record.doc_type] || props.record.doc_type || `📄 ${t('detail.literature')}`
+  return map[props.record.doc_type] || props.record.doc_type || t('detail.literature')
 })
 
 async function copyContent() {
@@ -117,7 +117,8 @@ async function copyContent() {
 <style scoped>
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(23,24,28,0.28);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
   padding: 24px;

@@ -2,7 +2,9 @@
   <div class="search-view">
     <!-- 无项目 -->
     <div v-if="!projectStore.currentProjectName" class="empty-state full">
-      <div class="empty-icon">📁</div>
+      <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3a1.5 1.5 0 0 1 1.06.44l1.2 1.2a1.5 1.5 0 0 0 1.06.44H19.5A1.5 1.5 0 0 1 21 8.58V17.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
       <p>{{ t('searchView.noProject') }}</p>
     </div>
 
@@ -14,29 +16,51 @@
 
         <!-- 结果滚动区 -->
         <div class="results-scroll">
-          <!-- 加载态（仅新搜索时显示，历史恢复时不显示全屏 loading） -->
-          <div v-if="(searchStore.isExpanding || searchStore.isSearching) && !searchStore.expansion && !searchStore.aiOutput" class="loading-state">
-            <div class="spinner">◌</div>
-            <p>{{ searchStore.isExpanding ? t('searchView.aiAnalyzing') : t('searchView.searching') }}</p>
+          <!-- 加载态：三段流程进度（拟词 → 检索 → 摘录） -->
+          <div v-if="(searchStore.isExpanding || searchStore.isSearching) && !searchStore.expansion && !searchStore.aiOutput" class="pipeline">
+            <div
+              v-for="(s, i) in pipelineSteps"
+              :key="s.key"
+              class="step"
+              :class="{ done: i < currentStep, active: i === currentStep }"
+            >
+              <span class="step-dot"></span>
+              <span class="step-label">{{ s.label }}</span>
+            </div>
           </div>
 
           <!-- 搜索错误 -->
           <div v-if="searchStore.searchError && !searchStore.isSearching" class="empty-state">
-            <div class="empty-icon sm">⚠️</div>
+            <svg class="empty-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="color:var(--danger)">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M12 7.5v5M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
             <p class="err-text">{{ searchStore.searchError }}</p>
           </div>
 
           <!-- 无结果（仅在 totalFound 也为 0 时才显示，避免历史恢复时的误判） -->
           <div v-else-if="searchStore.hasSearched && !searchStore.isSearching && !searchStore.records.length && !searchStore.totalFound && !searchStore.searchError" class="empty-state">
-            <div class="empty-icon sm">🔍</div>
+            <svg class="empty-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
             <p>{{ t('searchView.noResults') }}</p>
             <p class="sub">{{ t('searchView.noResultsHint') }}</p>
           </div>
 
-          <!-- 初始空状态 -->
-          <div v-else-if="!searchStore.hasSearched && !searchStore.isExpanding && !searchStore.isSearching && !searchStore.totalFound" class="empty-state">
-            <div class="empty-icon">📜</div>
-            <p>{{ t('searchView.emptyHint') }}</p>
+          <!-- 初始空状态：直接给出可点击的起点 -->
+          <div v-else-if="!searchStore.hasSearched && !searchStore.isExpanding && !searchStore.isSearching && !searchStore.totalFound" class="start">
+            <h2 class="start-title">{{ t('searchView.emptyTitle') }}</h2>
+            <p class="start-lead">{{ t('searchView.emptyHint') }}</p>
+            <div class="start-examples">
+              <span class="start-label">{{ t('searchView.tryLabel') }}</span>
+              <button
+                v-for="ex in exampleQueries"
+                :key="ex"
+                class="example-chip"
+                @click="runExample(ex)"
+              >{{ ex }}</button>
+            </div>
           </div>
 
           <!-- ① AI 关键词分析 -->
@@ -45,8 +69,12 @@
           <!-- 统计栏 -->
           <div v-if="searchStore.totalFound > 0" class="stats-bar">
             <span v-html="t('searchView.statsHits', { count: searchStore.totalFound.toLocaleString() })"></span>
-            <span>· {{ t('searchView.statsSentToAI', { count: Math.min(searchStore.topK, searchStore.totalFound) }) }}</span>
-            <span v-if="searchStore.contextChars"> · {{ t('searchView.statsContext', { count: contextKw }) }}</span>
+            <span class="stats-sep">·</span>
+            <span v-html="t('searchView.statsSentToAI', { count: Math.min(searchStore.topK, searchStore.totalFound) })"></span>
+            <template v-if="searchStore.contextChars">
+              <span class="stats-sep">·</span>
+              <span v-html="t('searchView.statsContext', { count: contextKw })"></span>
+            </template>
           </div>
 
           <!-- ② 原始记录列表 -->
@@ -71,8 +99,9 @@
         </div>
       </div>
 
-      <!-- ── 右侧对话栏 ── -->
+      <!-- ── 右侧对话栏：有可讨论的内容时才占用空间 ── -->
       <ChatPanel
+        v-if="searchStore.extractionDone || searchStore.chatMessages.length > 0"
         ref="chatPanelRef"
         :chat-messages="searchStore.chatMessages"
         :is-chat-streaming="searchStore.isChatStreaming"
@@ -136,6 +165,25 @@ watch(() => projectStore.currentProjectName, (n, o) => {
     searchHeaderRef.value?.loadAvailableFiles()
   }
 })
+
+// 三段流程：与后端实际的 拟词 → 检索 → 摘录 对应
+const pipelineSteps = computed(() => [
+  { key: 'expand',  label: t('searchView.stepExpand') },
+  { key: 'search',  label: t('searchView.stepSearch') },
+  { key: 'extract', label: t('searchView.stepExtract') },
+])
+const currentStep = computed(() => {
+  if (searchStore.isExpanding) return 0
+  if (searchStore.isSearching) return 1
+  return 2
+})
+
+const exampleQueries = computed<string[]>(() => t('searchView.examples').split('|'))
+
+function runExample(q: string) {
+  searchStore.query = q
+  handleSearch()
+}
 
 const contextKw = computed(() => {
   const n = searchStore.contextChars
@@ -378,16 +426,71 @@ async function sendChat(text: string) {
 <style scoped>
 .search-view { flex: 1; display: flex; height: 100%; overflow: hidden; }
 .left-column { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-.results-scroll { flex: 1; overflow-y: auto; padding: 12px 20px 20px; display: flex; flex-direction: column; gap: 10px; }
-.stats-bar { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; padding: 2px; }
-.stats-bar b { color: var(--text); }
-.empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); gap: 10px; padding: 40px 0; }
+.results-scroll { flex: 1; overflow-y: auto; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 12px; }
+/* 各面板按内容自然高度排布，不被 flex 压缩（否则关键词/摘录会被裁切） */
+.results-scroll > * { flex-shrink: 0; }
+
+/* 统计条：数字用等宽强调，其余弱化 */
+.stats-bar {
+  font-size: 12px; color: var(--text-3);
+  display: flex; gap: 8px; align-items: baseline; padding: 0 2px 2px;
+}
+.stats-bar b {
+  color: var(--text); font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums; font-weight: 500; font-size: 12px;
+}
+.stats-sep { color: var(--line-strong); }
+
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-2); gap: 8px; padding: 48px 24px; text-align: center; }
 .empty-state.full { width: 100%; height: 100%; }
-.empty-icon { font-size: 48px; opacity: 0.4; }
-.empty-icon.sm { font-size: 28px; }
-.err-text { color: #e53e3e; }
-.sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.spinner { font-size: 32px; opacity: 0.5; animation: spin 2s linear infinite; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.loading-state p { font-size: 14px; }
+.empty-icon { color: var(--text-3); margin-bottom: 4px; }
+.err-text { color: var(--danger); font-size: 13px; }
+.sub { font-size: 12px; color: var(--text-3); margin-top: 0; }
+
+/* ── 流程进度：三段，对应真实处理阶段 ── */
+.pipeline {
+  display: flex; align-items: center; gap: 0;
+  align-self: center; margin: 56px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.step { display: flex; align-items: center; gap: 7px; padding: 0 12px; position: relative; }
+.step + .step::before {
+  content: ''; position: absolute; left: -1px; top: 50%;
+  width: 14px; height: 1px; background: var(--line-strong); transform: translate(-100%, -50%);
+}
+.step-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--line-strong); flex-shrink: 0; transition: background var(--transition);
+}
+.step-label { font-size: 12px; color: var(--text-3); white-space: nowrap; transition: color var(--transition); }
+.step.done .step-dot { background: var(--text-3); }
+.step.done .step-label { color: var(--text-2); }
+.step.active .step-dot { background: var(--accent); animation: ping 1.4s ease-out infinite; }
+.step.active .step-label { color: var(--text); font-weight: 500; }
+@keyframes ping {
+  0%   { box-shadow: 0 0 0 0 rgba(47,107,255,0.35); }
+  70%  { box-shadow: 0 0 0 5px rgba(47,107,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(47,107,255,0); }
+}
+
+/* ── 起始状态：标题 + 说明 + 可点击示例 ── */
+.start {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 0;
+  padding: 40px 28px; text-align: center;
+}
+.start-title { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
+.start-lead { font-size: 13px; line-height: 1.7; color: var(--text-2); margin: 0 0 24px; max-width: 30em; }
+.start-examples { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; max-width: 34em; }
+.start-label { font-size: 11px; color: var(--text-3); margin-right: 2px; }
+.example-chip {
+  height: 28px; padding: 0 11px;
+  border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--bg); color: var(--text-2);
+  font-size: 12.5px; font-family: var(--font-ui); cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.example-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 </style>

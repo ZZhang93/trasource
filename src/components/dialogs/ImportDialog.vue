@@ -18,7 +18,7 @@
             <label class="field-label">{{ t('import.selectFile') }}</label>
             <div class="file-drop-zone" :class="{ 'has-file': hasFile }" @click="openFilePicker">
               <template v-if="!hasFile">
-                <div class="drop-icon">📂</div>
+                <svg class="drop-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <p class="drop-hint">{{ t('import.clickToSelect') }}</p>
                 <p class="drop-sub">{{ t('import.supportedFormats') }}</p>
               </template>
@@ -54,7 +54,6 @@
                 :class="{ active: docType === dt.value }"
                 @click="docType = dt.value"
               >
-                <span class="type-icon">{{ dt.icon }}</span>
                 <span>{{ dt.label }}</span>
               </button>
             </div>
@@ -139,8 +138,8 @@
         <div class="dialog-body">
           <div class="progress-wrap">
             <div class="progress-icon">
-              <template v-if="importStatus === 'done'">✅</template>
-              <template v-else-if="importStatus === 'error'">❌</template>
+              <template v-if="importStatus === 'done'"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" style="color:var(--success)"><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1.5"/><path d="M8 12.3l2.7 2.7L16 9.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></template>
+              <template v-else-if="importStatus === 'error'"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" style="color:var(--danger)"><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1.5"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></template>
               <template v-else>
                 <div class="spinner" />
               </template>
@@ -229,10 +228,10 @@ const errorMessage = ref('')
 
 // ── Computed ──────────────────────────────────────
 const DOC_TYPES = computed(() => [
-  { value: 'newspaper', icon: '📰', label: t('import.docTypeNewspaper') },
-  { value: 'book',      icon: '📚', label: t('import.docTypeBook') },
-  { value: 'paper',     icon: '📄', label: t('import.docTypePaper') },
-  { value: 'interview', icon: '🎙️', label: t('import.docTypeInterview') },
+  { value: 'newspaper', label: t('import.docTypeNewspaper') },
+  { value: 'book', label: t('import.docTypeBook') },
+  { value: 'paper', label: t('import.docTypePaper') },
+  { value: 'interview', label: t('import.docTypeInterview') },
 ])
 
 const hasFile = computed(() => !!(selectedFilePath.value || webFile.value))
@@ -241,13 +240,10 @@ const isCsv = computed(() =>
   selectedFileName.value.toLowerCase().endsWith('.csv')
 )
 
+// 文件类型直接显示扩展名，比图标更明确
 const fileTypeIcon = computed(() => {
-  const name = selectedFileName.value.toLowerCase()
-  if (name.endsWith('.csv'))  return '📰'
-  if (name.endsWith('.pdf'))  return '📄'
-  if (name.endsWith('.epub') || name.endsWith('.mobi')) return '📖'
-  if (name.endsWith('.docx') || name.endsWith('.doc'))  return '📝'
-  return '📄'
+  const ext = selectedFileName.value.split('.').pop()?.toUpperCase() || 'FILE'
+  return ext.length <= 4 ? ext : 'FILE'
 })
 
 // ── Methods ────────────────────────────────────────
@@ -418,7 +414,8 @@ function handleDone() {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.35);
+  background: rgba(23,24,28,0.28);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -548,7 +545,13 @@ function handleDone() {
   display: flex; align-items: center; gap: 12px;
   text-align: left;
 }
-.file-icon { font-size: 28px; }
+.file-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 40px; height: 26px; padding: 0 8px; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  color: var(--accent); background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
 .file-name { font-size: 13px; font-weight: 500; margin: 0 0 2px; }
 .file-size { font-size: 11px; color: var(--text-muted); margin: 0; }
 .remove-file {

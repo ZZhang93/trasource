@@ -5,9 +5,9 @@
     open
   >
     <summary class="panel-header">
-      <span>{{ expansion.success === false ? t('keyword.fallbackTitle') : t('keyword.aiAnalysis') }}</span>
+      <span class="kw-title">{{ expansion.success === false ? t('keyword.fallbackTitle') : t('keyword.aiAnalysis') }}</span>
       <span v-if="expansion.success === false" class="meta-tag fallback-tag">{{ t('keyword.checkApiKey') }}</span>
-      <span v-else-if="expansion.time_range" class="meta-tag">📅 {{ expansion.time_range }}</span>
+      <span v-else-if="expansion.time_range" class="meta-tag">{{ expansion.time_range }}</span>
     </summary>
     <div class="keyword-content">
       <p v-if="expansion.success === false && expansion.error" class="intent fallback-hint">
@@ -50,21 +50,44 @@ function getWeightClass(w: number): string {
 </script>
 
 <style scoped>
-.panel { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: visible; }
-.panel[open] > .panel-header { border-bottom: 1px solid var(--border); }
-.panel-header { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: var(--sidebar-bg); font-size: 13px; font-weight: 500; cursor: pointer; user-select: none; list-style: none; }
+.panel { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--bg); }
+.panel[open] > .panel-header { border-bottom: 1px solid var(--line); }
+.panel-header {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px;
+  font-size: 12.5px; font-weight: 500; color: var(--text);
+  cursor: pointer; user-select: none; list-style: none;
+  transition: background var(--transition);
+}
+.panel-header:hover { background: var(--surface); }
 .panel-header::-webkit-details-marker { display: none; }
-.panel-header::before { content: '▸'; font-size: 10px; color: var(--text-muted); transition: transform 150ms; }
-.panel[open] > .panel-header::before { transform: rotate(90deg); }
-.meta-tag { font-size: 11px; color: var(--text-muted); background: var(--hover-bg); padding: 2px 6px; border-radius: 3px; margin-left: auto; }
-.fallback-tag { color: #c05621; background: #fefcbf; }
-.fallback-hint { color: #c05621; font-size: 12px; }
-.keyword-content { padding: 10px 14px; }
-.intent { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
+.panel-header::before {
+  content: ''; width: 5px; height: 5px; border-right: 1.4px solid var(--text-3);
+  border-bottom: 1.4px solid var(--text-3); transform: rotate(-45deg);
+  transition: transform var(--transition); flex-shrink: 0; margin-left: 1px;
+}
+.panel[open] > .panel-header::before { transform: rotate(45deg); }
+.kw-title { flex: 1; }
+.meta-tag {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--text-2); background: var(--surface-3);
+  padding: 2px 7px; border-radius: var(--radius-sm); margin-left: auto;
+}
+.fallback-tag { color: var(--warn); background: #FDF6E7; }
+.fallback-hint { color: var(--warn); font-size: 12px; }
+.keyword-content { padding: 12px 14px 14px; }
+.intent { font-size: 13px; line-height: 1.65; color: var(--text-2); margin: 0 0 12px; }
 .terms { display: flex; flex-wrap: wrap; gap: 6px; }
-.term-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; }
-.weight-high { background: var(--accent-soft); color: #2383E2; }
-.weight-mid  { background: #F0FFF4; color: #38A169; }
-.weight-low  { background: var(--hover-bg); color: var(--text-muted); }
-.weight { font-size: 10px; opacity: 0.7; }
+/* 权重：以填充强度分三档，数字用等宽 */
+.term-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 9px; border-radius: var(--radius);
+  font-size: 12.5px; line-height: 1;
+}
+.weight-high { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.weight-mid  { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.weight-low  { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); }
+.weight {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; opacity: 0.65;
+}
 </style>

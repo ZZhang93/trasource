@@ -1,11 +1,13 @@
 <template>
   <aside class="sidebar">
-    <!-- App 标题 / Logo -->
+    <!-- 标识 -->
     <div class="sidebar-logo">
-      <img src="@/assets/logo.png" class="logo-icon-img" :alt="t('sidebar.appName')" />
-      <span class="logo-text">{{ t('sidebar.appName') }}</span>
+      <div class="wordmark">
+        <span class="wordmark-zh">问渠</span>
+        <span class="wordmark-en data">trasource</span>
+      </div>
       <div style="flex:1" />
-      <select v-model="currentLocale" class="locale-select" @change="onLocaleChange">
+      <select v-model="currentLocale" class="locale-select" @change="onLocaleChange" :aria-label="t('sidebar.appName')">
         <option value="zh">中</option>
         <option value="en">EN</option>
       </select>
@@ -18,7 +20,10 @@
         :class="{ active: route.name === 'search' }"
         @click="router.push('/search')"
       >
-        <span class="item-icon">🔍</span>
+        <svg class="ico" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7.2" cy="7.2" r="4.4" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
         <span>{{ t('sidebar.search') }}</span>
       </button>
     </div>
@@ -84,7 +89,10 @@
     <!-- 当前项目操作 -->
     <div v-if="projectStore.currentProject" class="project-actions">
       <button class="action-btn" @click="showImport = true">
-        <span>⬆️</span> {{ t('sidebar.importLiterature') }}
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 11V3M8 3L4.8 6.2M8 3l3.2 3.2M2.8 12.5h10.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        {{ t('sidebar.importLiterature') }}
       </button>
     </div>
 
@@ -101,7 +109,6 @@
         @click="restoreHistory(entry)"
         :title="entry.query"
       >
-        <span class="history-icon">🕐</span>
         <span class="history-query">{{ entry.query }}</span>
         <span class="history-count" v-if="entry.total_found">{{ formatCount(entry.total_found) }}</span>
         <button
@@ -123,15 +130,25 @@
         :class="{ active: route.name === 'notes' || route.name === 'note-detail' }"
         @click="router.push('/notes')"
       >
-        <span class="item-icon">📝</span>
+        <svg class="ico" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.5 2.5h6.2l2.8 2.8v8.2H3.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          <path d="M9.6 2.6v3h3M5.8 8.5h4.4M5.8 11h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
         <span>{{ t('sidebar.notes') }}</span>
       </button>
       <button class="sidebar-item" @click="showLibrary = true">
-        <span class="item-icon">📚</span>
+        <svg class="ico" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="2.6" y="3" width="3.2" height="10" rx="0.8" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="6.9" y="3" width="3.2" height="10" rx="0.8" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M11.6 4.2l2 9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
         <span>{{ t('sidebar.library') }}</span>
       </button>
       <button class="sidebar-item" @click="showSettings = true">
-        <span class="item-icon">⚙️</span>
+        <svg class="ico" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.1" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M8 1.9v1.6M8 12.5v1.6M14.1 8h-1.6M3.5 8H1.9M12.3 3.7l-1.1 1.1M4.8 11.2l-1.1 1.1M12.3 12.3l-1.1-1.1M4.8 4.8L3.7 3.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
         <span>{{ t('sidebar.settings') }}</span>
       </button>
     </div>
@@ -411,13 +428,13 @@ function formatCount(n: number): string {
 
 <style scoped>
 .sidebar {
-  width: 220px;
-  min-width: 220px;
+  width: 232px;
+  min-width: 232px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -425,26 +442,32 @@ function formatCount(n: number): string {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-.logo-icon-img { width: 24px; height: 24px; object-fit: contain; border-radius: 5px; flex-shrink: 0; }
-.logo-text { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.wordmark { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.wordmark-zh {
+  font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: 0.01em;
+}
+.wordmark-en {
+  font-size: 10px; color: var(--text-3); letter-spacing: 0.02em;
+}
 
 .locale-select {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-2);
   background: var(--bg);
   cursor: pointer;
   outline: none;
   flex-shrink: 0;
 }
-.locale-select:hover { border-color: var(--accent); color: var(--text); }
+.locale-select:hover { border-color: var(--text-3); color: var(--text); }
 
 .sidebar-nav { padding: 8px 8px 2px; }
 
@@ -452,12 +475,14 @@ function formatCount(n: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px 4px;
-  font-size: 11px;
+  height: 26px;
+  padding: 0 14px 0 16px;
+  margin-top: 10px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-3);
 }
 
 .icon-btn {
@@ -471,25 +496,26 @@ function formatCount(n: number): string {
 .project-list { padding: 0 8px 4px; }
 
 .project-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; border-radius: var(--radius);
-  cursor: pointer; transition: background 150ms;
-  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 8px; border-radius: var(--radius);
+  cursor: pointer; transition: background var(--transition), color var(--transition);
+  position: relative; color: var(--text-2);
 }
-.project-item:hover { background: var(--hover-bg); }
-.project-item.active { background: var(--hover-bg); color: var(--accent); }
+.project-item:hover { background: var(--surface-3); color: var(--text); }
+.project-item.active { background: var(--accent-soft); color: var(--accent); }
 
-.item-icon-svg { flex-shrink: 0; color: var(--text-muted); }
-.project-item.active .item-icon-svg { color: var(--accent); }
+.item-icon-svg { flex-shrink: 0; opacity: 0.8; }
 
 .item-name {
   font-size: 13px; flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.project-item.active .item-name { font-weight: 500; }
 .item-badge {
-  font-size: 10px; color: var(--text-muted);
-  background: var(--border); padding: 1px 5px; border-radius: 10px;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; color: var(--text-3);
 }
+.project-item.active .item-badge { color: var(--accent); opacity: 0.75; }
 
 /* 删除按钮 */
 .delete-project-btn {
@@ -525,45 +551,35 @@ function formatCount(n: number): string {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .muted-text { font-size: 12px; color: var(--text-muted); padding: 4px 8px; }
 
-.project-actions { padding: 2px 8px 8px; }
+.project-actions { padding: 4px 8px 8px; }
 .action-btn {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 8px; border-radius: var(--radius);
-  border: 1px dashed var(--border); background: transparent;
-  font-size: 12px; color: var(--text-muted); cursor: pointer;
-  transition: all 150ms;
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  height: 30px; border-radius: var(--radius);
+  border: 1px solid var(--line-strong); background: var(--bg);
+  font-size: 12.5px; color: var(--text-2); cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
 }
-.action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .sidebar-bottom { padding: 0 8px 10px; }
-.sidebar-divider { height: 1px; background: var(--border); margin: 4px 0 6px; }
-
-.sidebar-item {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 5px 8px; border-radius: var(--radius);
-  border: none; background: transparent;
-  font-size: 13px; color: var(--text);
-  cursor: pointer; text-align: left; transition: background 150ms;
-}
-.sidebar-item:hover { background: var(--hover-bg); }
-.sidebar-item.active { background: var(--hover-bg); color: var(--accent); font-weight: 500; }
+.sidebar-divider { height: 1px; background: var(--line); margin: 6px 0 6px; }
 
 /* 历史记录 */
 .history-list { padding: 0 8px 4px; }
 .history-item {
-  display: flex; align-items: center; gap: 5px;
-  padding: 4px 8px; border-radius: var(--radius);
-  cursor: pointer; transition: background 150ms;
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 8px; border-radius: var(--radius);
+  cursor: pointer; transition: background var(--transition);
 }
-.history-item:hover { background: var(--hover-bg); }
-.history-icon { font-size: 11px; opacity: 0.6; flex-shrink: 0; }
+.history-item:hover { background: var(--surface-3); }
 .history-query {
-  font-size: 12px; color: var(--text-muted);
+  font-size: 12.5px; color: var(--text-2);
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.history-item:hover .history-query { color: var(--text); }
 .history-count {
-  font-size: 10px; color: var(--text-muted);
-  background: var(--border); padding: 0 4px; border-radius: 3px; flex-shrink: 0;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; color: var(--text-3); flex-shrink: 0;
 }
 .history-delete-btn {
   background: none; border: none; cursor: pointer;
@@ -577,7 +593,8 @@ function formatCount(n: number): string {
 /* Overlay / dialogs */
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.3);
+  background: rgba(23,24,28,0.28);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 1000;
 }

@@ -336,7 +336,8 @@ function formatCount(n: number): string {
 /* ── 遮罩 ── */
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(23,24,28,0.28);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
 }

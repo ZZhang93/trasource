@@ -325,7 +325,7 @@
 
         <!-- ── 关于 ── -->
         <div v-if="activeTab === 'about'" class="about-tab">
-          <div class="about-logo">📜</div>
+          <div class="about-logo">问渠</div>
           <h2>{{ t('settings.aboutTitle') }}</h2>
           <p class="version">{{ t('settings.aboutVersion', { version: appVersion }) }}</p>
           <p class="about-desc">
@@ -714,7 +714,8 @@ async function save() {
 <style scoped>
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(23,24,28,0.28);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
 }

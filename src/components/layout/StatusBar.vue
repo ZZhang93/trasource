@@ -144,28 +144,28 @@ onMounted(() => {
 
 <style scoped>
 .status-bar {
-  height: 24px;
+  height: 30px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--sidebar-bg);
-  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 
 .status-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
-  margin-right: 6px;
+  margin-right: 8px;
   flex-shrink: 0;
 }
-.dot-ok  { background: #48BB78; }
-.dot-err { background: #FC8181; }
+.dot-ok  { background: var(--success); }
+.dot-err { background: var(--text-3); }
 
-.status-item { padding: 0 5px; }
-.provider-tag { font-weight: 500; opacity: 0.9; }
-.model-name { opacity: 0.8; }
-.sep { color: var(--border); }
+.status-item { padding: 0 6px; }
+.provider-tag { color: var(--text-2); }
+.model-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.sep { color: var(--line-strong); }
 </style>

@@ -209,7 +209,7 @@ export default {
   'detail.createNote': 'Create Note',
 
   // ── Search Header ───────────────────────────────────
-  'search.placeholder': 'Enter search topic, e.g., grain production changes during the Great Leap Forward...',
+  'search.placeholder': 'e.g., grain output and procurement during the Great Leap Forward…',
   'search.langZh': 'Chinese',
   'search.langEn': 'English',
   'search.langMixed': 'Mixed',
@@ -228,13 +228,13 @@ export default {
   'search.noFiles': 'No files available',
 
   // ── Keyword Panel ───────────────────────────────────
-  'keyword.aiAnalysis': 'AI Keyword Analysis',
+  'keyword.aiAnalysis': 'AI-drafted terms',
   'keyword.fallbackTitle': 'Basic Tokenization (AI Unavailable)',
   'keyword.checkApiKey': 'Please check API Key',
   'keyword.fallbackHint': 'AI query expansion failed, falling back to jieba tokenization. Reason: {error}',
 
   // ── Records List ────────────────────────────────────
-  'records.totalRecords': 'All {count} Raw Records',
+  'records.totalRecords': 'Sources · {count} hits',
   'records.loading': 'Loading local library data...',
   'records.viewOriginal': 'View original',
   'records.prevPage': 'Prev',
@@ -242,16 +242,20 @@ export default {
   'records.pageInfo': 'Page {current} / {total}',
 
   // ── Extraction Panel ────────────────────────────────
-  'extraction.title': 'AI Document Extraction',
+  'extraction.title': 'Extracted passages',
   'extraction.copied': 'Copied',
+  'extraction.streaming': 'Extracting',
   'extraction.copy': 'Copy',
-  'extraction.sourcesTitle': 'Click to view original ({count} sources)',
+  'extraction.sourcesTitle': 'Cited sources · {count}',
   'extraction.viewOriginal': 'View Original',
 
   // ── Chat Panel ──────────────────────────────────────
   'chat.title': 'Follow-up Questions',
   'chat.quoteExtraction': 'Quote Extraction',
-  'chat.waitingHint': 'You can ask follow-up questions here after the search is complete',
+  'chat.waitingHint': 'Once the passages are ready, ask follow-up questions about them here.',
+  'chat.readyHint': 'Ask about these passages, or use “Quote extraction” to bring them into your question.',
+  'chat.roleYou': 'You',
+  'chat.roleAI': 'AI',
   'chat.placeholder': 'Ask follow-up questions about the materials above...',
   'chat.send': 'Send',
   'chat.quotePrefix': '[Quoting AI Extraction]\n',
@@ -260,14 +264,20 @@ export default {
 
   // ── Search View ─────────────────────────────────────
   'searchView.noProject': 'Please create or select a project from the sidebar',
-  'searchView.aiAnalyzing': 'AI is analyzing your search intent...',
-  'searchView.searching': 'Searching the full-text database...',
+  'searchView.aiAnalyzing': 'Drafting search terms…',
+  'searchView.searching': 'Reading the archive…',
   'searchView.noResults': 'No relevant documents found',
   'searchView.noResultsHint': 'Try different keywords, or check if the library has been imported',
-  'searchView.emptyHint': 'Enter a search topic, and AI will help you extract relevant materials from historical documents',
-  'searchView.statsHits': 'Found {count} records',
-  'searchView.statsSentToAI': 'sent to AI {count} records',
-  'searchView.statsContext': '{count} characters',
+  'searchView.emptyTitle': 'Start with a question',
+  'searchView.tryLabel': 'Try',
+  'searchView.examples': 'Grain output and procurement in the Great Leap Forward|Communal kitchens during collectivization|Agricultural policy adjustment around 1962',
+  'searchView.stepExpand': 'Drafting terms',
+  'searchView.stepSearch': 'Reading archive',
+  'searchView.stepExtract': 'Extracting passages',
+  'searchView.emptyHint': 'Ask the archive a question. The AI drafts search terms, extracts every relevant passage verbatim, and cites each source.',
+  'searchView.statsHits': '<b>{count}</b> matches',
+  'searchView.statsSentToAI': 'sent <b>{count}</b> to AI',
+  'searchView.statsContext': '<b>{count}</b> chars',
   'searchView.extractionFailed': '\n\nExtraction failed, please retry',
   'searchView.searchFailed': 'Search failed',
 
