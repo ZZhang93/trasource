@@ -27,6 +27,7 @@ jobs:
           cache: npm
 
       - uses: actions/setup-python@v5
+        id: setup-python
         with:
           python-version: '3.11'
           cache: pip
@@ -47,9 +48,13 @@ jobs:
 
       - name: Frontend type, build, translation, and regression checks
         run: npm run check
+        env:
+          TRASOURCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}
 
       - name: Build native Python sidecar
         run: npm run build:sidecar
+        env:
+          TRASOURCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}
 
       - name: Prepare clean-clone sidecar metadata
         run: npm run prepare:sidecar:dev

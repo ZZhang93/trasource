@@ -74,7 +74,16 @@ class ProjectPathTests(unittest.TestCase):
     def test_symlink_escape_is_rejected_by_canonical_containment(self):
         outside = os.path.join(self.temp.name, "outside")
         os.mkdir(outside)
-        os.symlink(outside, os.path.join(self.projects, "linked"))
+        try:
+            os.symlink(
+                outside,
+                os.path.join(self.projects, "linked"),
+                target_is_directory=True,
+            )
+        except OSError as error:
+            if getattr(error, "winerror", None) == 1314:
+                self.skipTest("Windows runner does not grant symlink privileges")
+            raise
         with self.assertRaises(ValueError):
             pm.get_project_dir("linked")
 
@@ -508,15 +517,17 @@ class PlatformPathTests(unittest.TestCase):
     def test_platform_specific_data_directories(self):
         self.assertEqual(
             get_app_data_dir(platform="darwin", env={}, home="/Users/a"),
-            "/Users/a/Library/Application Support/trasource",
+            os.path.abspath(
+                os.path.join("/Users/a", "Library", "Application Support", "trasource")
+            ),
         )
         self.assertEqual(
             get_app_data_dir(platform="win32", env={"LOCALAPPDATA": "C:/Data"}, home="C:/Users/a"),
-            os.path.abspath("C:/Data/trasource"),
+            os.path.abspath(os.path.join("C:/Data", "trasource")),
         )
         self.assertEqual(
             get_app_data_dir(platform="linux", env={"XDG_DATA_HOME": "/data"}, home="/home/a"),
-            "/data/trasource",
+            os.path.abspath(os.path.join("/data", "trasource")),
         )
 
     def test_legacy_cross_platform_data_is_migrated_without_overwrite(self):
