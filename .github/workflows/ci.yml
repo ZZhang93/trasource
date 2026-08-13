@@ -1,0 +1,63 @@
+name: Quality checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux desktop build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Frontend type, build, translation, and regression checks
+        run: npm run check
+
+      - name: Build native Python sidecar
+        run: npm run build:sidecar
+
+      - name: Prepare clean-clone sidecar metadata
+        run: npm run prepare:sidecar:dev
+
+      - name: Rust check
+        working-directory: src-tauri
+        run: cargo check --locked
+
+      - name: Rust sidecar-mode check
+        working-directory: src-tauri
+        env:
+          TRASOURCE_FORCE_SIDECAR: '1'
+        run: cargo check --release --locked

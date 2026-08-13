@@ -228,6 +228,9 @@ const backend = useBackendStore()
 
 // 历史记录
 const recentHistory = ref<any[]>([])
+let historyLoadAbort: AbortController | null = null
+let historyRestoreAbort: AbortController | null = null
+let historyGeneration = 0
 
 const showNewProject = ref(false)
 const showImport = ref(false)
@@ -281,12 +284,23 @@ function onCloseDialogs() {
 }
 
 async function loadHistory() {
-  if (!projectStore.currentProjectName) return
+  const projectName = projectStore.currentProjectName
+  historyLoadAbort?.abort()
+  if (!projectName) {
+    recentHistory.value = []
+    return
+  }
+  const controller = new AbortController()
+  historyLoadAbort = controller
+  const gen = ++historyGeneration
   try {
     const data = await api.get<any[]>(
-      `/api/history?project_name=${encodeURIComponent(projectStore.currentProjectName)}&limit=8`
+      `/api/history?project_name=${encodeURIComponent(projectName)}&limit=8`,
+      controller.signal,
     )
-    recentHistory.value = data || []
+    if (gen === historyGeneration && projectName === projectStore.currentProjectName) {
+      recentHistory.value = data || []
+    }
   } catch {}
 }
 
@@ -310,43 +324,72 @@ async function clearAllHistory() {
 }
 
 async function restoreHistory(entry: any) {
+  const projectName = projectStore.currentProjectName
+  if (!projectName) return
+  historyRestoreAbort?.abort()
+  const controller = new AbortController()
+  historyRestoreAbort = controller
+  const gen = ++historyGeneration
+  const sessionId = searchStore.beginSession()
+  const active = () =>
+    !controller.signal.aborted &&
+    gen === historyGeneration &&
+    sessionId === searchStore.sessionId &&
+    projectName === projectStore.currentProjectName
+
+  // 立即使正在进行的搜索/对话失效，避免旧流写入即将恢复的历史会话。
+  searchStore.reset()
+  searchStore.query = entry.query || ''
+  router.push('/search')
+
   // 1) 列表项不含 ai_output 全文，先按 id 取完整记录
   let full = entry
   try {
-    full = await api.get<any>(`/api/history/${entry.id}`)
+    full = await api.get<any>(`/api/history/${entry.id}`, controller.signal)
   } catch {}
+  if (!active()) return
 
   // 2) 重置状态，恢复缓存
-  searchStore.reset()
   searchStore.query = full.query
   searchStore.language = full.language || 'zh'
   if (full.expansion) searchStore.expansion = full.expansion
   if (full.ai_output) {
     searchStore.aiOutput = full.ai_output
-    searchStore.extractionDone = true
   }
   searchStore.totalFound = full.total_found || 0
   searchStore.hasSearched = true
 
-  router.push('/search')
-
   // 3) 静默重跑检索恢复 records 和服务端 context（对话依赖 search_id）
-  if (full.query && projectStore.currentProjectName) {
+  if (full.query) {
     const weightedTokens = full.expansion?.success && full.expansion?.terms
       ? Object.entries(full.expansion.terms).map(([t, w]) => [t, w])
       : null
-    api.post<any>('/api/search/execute', {
-      query: full.query,
-      language: full.language || 'zh',
-      project_name: projectStore.currentProjectName,
-      weighted_tokens: weightedTokens,
-      top_k: searchStore.topK,
-    }).then(result => {
+    searchStore.isSearching = true
+    try {
+      const result = await api.post<any>('/api/search/execute', {
+        query: full.query,
+        language: full.language || 'zh',
+        project_name: projectName,
+        weighted_tokens: weightedTokens,
+        top_k: searchStore.topK,
+      }, controller.signal)
+      if (!active()) return
       searchStore.records = result.records || []
       searchStore.totalFound = result.total_found || searchStore.records.length || 0
       searchStore.searchId = result.search_id || ''
       searchStore.contextChars = result.context_chars || 0
-    }).catch(() => {})
+      searchStore.contextRecordIds = (result.context_record_ids || [])
+        .map((id: unknown) => Number(id))
+        .filter((id: number) => Number.isFinite(id))
+      searchStore.contextTruncated = Boolean(result.truncated)
+      // 历史摘录只有在重新建立了受项目约束的服务端 context 后，才允许
+      // 继续对话；否则会把问题作为无上下文聊天发送。
+      searchStore.extractionDone = Boolean(full.ai_output && searchStore.searchId)
+    } catch {
+      if (active()) searchStore.searchError = t('searchView.searchFailed')
+    } finally {
+      if (active()) searchStore.isSearching = false
+    }
   }
 }
 
@@ -357,6 +400,9 @@ onMounted(() => {
   loadHistory()
 })
 onUnmounted(() => {
+  historyLoadAbort?.abort()
+  historyRestoreAbort?.abort()
+  historyGeneration += 1
   window.removeEventListener('open-settings', onOpenSettings)
   window.removeEventListener('close-dialogs', onCloseDialogs)
   window.removeEventListener('history-updated', loadHistory)
@@ -364,6 +410,8 @@ onUnmounted(() => {
 
 // 当项目切换时刷新历史
 watch(() => projectStore.currentProjectName, () => {
+  historyRestoreAbort?.abort()
+  historyGeneration += 1
   loadHistory()
   confirmDeleteName.value = ''
 })

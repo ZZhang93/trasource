@@ -37,9 +37,14 @@
     </div>
 
     <!-- 高级选项 -->
-    <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+    <button
+      type="button"
+      class="advanced-toggle"
+      :aria-expanded="showAdvanced"
+      @click="showAdvanced = !showAdvanced"
+    >
       <span>{{ showAdvanced ? '▴' : '▾' }} {{ t('search.advancedOptions') }}</span>
-    </div>
+    </button>
     <div v-if="showAdvanced" class="advanced-panel">
       <div class="adv-row">
         <label>{{ t('search.dateRange') }}</label>
@@ -56,22 +61,40 @@
       <div class="adv-row adv-row-files">
         <label>{{ t('search.fileFilter') }}</label>
         <div class="file-filter-wrap" @click.stop>
-          <div class="file-filter-box" @click="toggleFileDropdown">
+          <div class="file-filter-box">
             <template v-if="searchStore.fileFilter.length === 0">
-              <div class="file-filter-box-row">
+              <button
+                type="button"
+                class="file-filter-toggle file-filter-box-row"
+                aria-haspopup="listbox"
+                :aria-expanded="showFileDropdown"
+                @click="toggleFileDropdown"
+              >
                 <span class="file-filter-placeholder">{{ t('search.allFiles') }}</span>
                 <span class="file-filter-arrow">{{ showFileDropdown ? '▴' : '▾' }}</span>
-              </div>
+              </button>
             </template>
             <template v-else>
               <span class="file-chip" v-for="f in searchStore.fileFilter" :key="f">
                 <span class="file-chip-name">{{ f }}</span>
-                <span class="chip-remove" @click.stop="removeFileFilter(f)">×</span>
+                <button
+                  type="button"
+                  class="chip-remove"
+                  :aria-label="`${t('common.clear')} ${f}`"
+                  @click.stop="removeFileFilter(f)"
+                >×</button>
               </span>
-              <div class="file-filter-box-row" style="margin-top:2px;">
+              <button
+                type="button"
+                class="file-filter-toggle file-filter-box-row"
+                style="margin-top:2px;"
+                aria-haspopup="listbox"
+                :aria-expanded="showFileDropdown"
+                @click="toggleFileDropdown"
+              >
                 <span style="font-size:10px;color:var(--text-muted);">{{ t('search.selectedFiles', { count: searchStore.fileFilter.length }) }}</span>
                 <span class="file-filter-arrow">{{ showFileDropdown ? '▴' : '▾' }}</span>
-              </div>
+              </button>
             </template>
           </div>
           <div v-if="showFileDropdown" class="file-dropdown">
@@ -98,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useSearchStore } from '@/stores/search'
 import { useProjectStore } from '@/stores/project'
 import { api } from '@/api/client'
@@ -113,16 +136,39 @@ const projectStore = useProjectStore()
 const showAdvanced = ref(false)
 const showFileDropdown = ref(false)
 const availableFiles = ref<string[]>([])
+let filesAbort: AbortController | null = null
+let filesGeneration = 0
+
+watch(() => searchStore.topK, value => {
+  localStorage.setItem('trasource_search_top_k', String(value))
+})
 
 async function loadAvailableFiles() {
-  if (!projectStore.currentProjectName) return
+  const projectName = projectStore.currentProjectName
+  filesAbort?.abort()
+  filesAbort = null
+  const generation = ++filesGeneration
+  availableFiles.value = []
+  showFileDropdown.value = false
+  if (!projectName) return
+
+  const controller = new AbortController()
+  filesAbort = controller
+  const active = () =>
+    generation === filesGeneration &&
+    projectName === projectStore.currentProjectName &&
+    !controller.signal.aborted
+
   try {
     const data = await api.get<{ files: string[]; total: number }>(
-      `/api/library/stats/${encodeURIComponent(projectStore.currentProjectName)}`
+      `/api/library/stats/${encodeURIComponent(projectName)}`,
+      controller.signal,
     )
-    availableFiles.value = data.files || []
+    if (active()) availableFiles.value = data.files || []
   } catch {
-    availableFiles.value = []
+    if (active()) availableFiles.value = []
+  } finally {
+    if (filesAbort === controller) filesAbort = null
   }
 }
 
@@ -144,6 +190,8 @@ onMounted(() => {
   document.addEventListener('click', closeFileDropdownOnOutside)
 })
 onUnmounted(() => {
+  filesAbort?.abort()
+  filesGeneration += 1
   document.removeEventListener('click', closeFileDropdownOnOutside)
 })
 
@@ -183,9 +231,14 @@ defineExpose({ loadAvailableFiles, collapseAdvanced })
 .advanced-toggle {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 12px; color: var(--text-3); padding: 8px 2px 10px;
+  border: 0; background: transparent; font-family: inherit;
   cursor: pointer; user-select: none;
 }
 .advanced-toggle:hover { color: var(--text); }
+.advanced-toggle:focus-visible, .file-filter-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .advanced-panel { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
 .adv-row { display: flex; align-items: center; gap: 8px; }
 .adv-row > label { font-size: 11px; color: var(--text-muted); width: 58px; flex-shrink: 0; }
@@ -196,13 +249,14 @@ defineExpose({ loadAvailableFiles, collapseAdvanced })
 .adv-val { font-size: 12px; color: var(--text-muted); min-width: 40px; }
 .adv-row-files { align-items: flex-start; }
 .file-filter-wrap { flex: 1; position: relative; }
-.file-filter-box { display: flex; flex-direction: column; gap: 3px; min-height: 28px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); cursor: pointer; font-size: 12px; }
+.file-filter-box { display: flex; flex-direction: column; gap: 3px; min-height: 28px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); font-size: 12px; }
 .file-filter-box-row { display: flex; align-items: center; justify-content: space-between; }
+.file-filter-toggle { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .file-filter-placeholder { color: var(--text-muted); flex: 1; }
 .file-filter-arrow { font-size: 10px; color: var(--text-muted); flex-shrink: 0; margin-left: 4px; }
 .file-chip { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 3px 8px; background: var(--accent-soft); color: var(--accent); border-radius: 3px; font-size: 11px; width: 100%; box-sizing: border-box; overflow: hidden; }
 .file-chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-remove { cursor: pointer; font-size: 13px; opacity: 0.6; flex-shrink: 0; line-height: 1; }
+.chip-remove { padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 13px; opacity: 0.6; flex-shrink: 0; line-height: 1; }
 .chip-remove:hover { opacity: 1; }
 .file-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); max-height: 200px; overflow-y: auto; margin-top: 2px; }
 .file-dropdown-empty { padding: 8px 10px; font-size: 12px; color: var(--text-muted); }

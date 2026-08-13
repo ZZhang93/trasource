@@ -38,7 +38,7 @@
               ref="fileInput"
               type="file"
               style="display:none"
-              accept=".csv,.pdf,.docx,.doc,.txt,.epub,.mobi,.azw3"
+              accept=".csv,.pdf,.docx,.txt,.epub,.mobi,.azw3"
               @change="onFileSelected"
             />
           </div>
@@ -183,7 +183,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { api } from '@/api/client'
+import { api, backendFetch } from '@/api/client'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
@@ -258,7 +258,7 @@ async function openFilePicker() {
         multiple: false,
         filters: [{
           name: t('import.fileFilterName'),
-          extensions: ['csv', 'pdf', 'docx', 'doc', 'txt', 'epub', 'mobi', 'azw3'],
+          extensions: ['csv', 'pdf', 'docx', 'txt', 'epub', 'mobi', 'azw3'],
         }],
       })
       if (result && typeof result === 'string') {
@@ -350,25 +350,22 @@ async function startImport() {
       interview_location: meta.value.interview_location,
     })
 
-    // 监听进度 SSE
-    const es = api.stream(`/api/import/${task_id}/progress`)
-    es.onmessage = (event) => {
-      const data = JSON.parse(event.data)
+    // EventSource cannot attach the per-instance authentication header. Poll
+    // the lightweight status endpoint through the authenticated API client.
+    while (true) {
+      const data = await api.get<any>(`/api/import/${task_id}/status`)
+      if (data.status === 'not_found') {
+        throw new Error(t('import.sseDisconnected'))
+      }
       importStatus.value = data.status
       progressPct.value = data.progress || 0
       progressMessage.value = data.message || ''
       importedCount.value = data.imported || 0
       if (data.error) errorMessage.value = data.error
       if (data.status === 'done' || data.status === 'error') {
-        es.close()
+        break
       }
-    }
-    es.onerror = () => {
-      es.close()
-      if (importStatus.value !== 'done') {
-        importStatus.value = 'error'
-        errorMessage.value = t('import.sseDisconnected')
-      }
+      await new Promise(resolve => window.setTimeout(resolve, 500))
     }
   } catch (err: any) {
     importStatus.value = 'error'
@@ -388,7 +385,7 @@ async function uploadFileToBackend(file: File): Promise<string> {
     reader.onerror = () => reject(new Error(reader.error?.message || t('import.fileReadFailed')))
     reader.readAsArrayBuffer(file)
   })
-  const res = await fetch('http://127.0.0.1:8765/api/upload', {
+  const res = await backendFetch('/api/upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/octet-stream',

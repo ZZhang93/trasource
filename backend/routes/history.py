@@ -3,9 +3,9 @@
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
 
 import core.history_manager as hm
 
@@ -14,16 +14,19 @@ logger = logging.getLogger("backend.history")
 
 
 class HistoryAddRequest(BaseModel):
-    project_name: str
-    query: str
-    language: str = "zh"
+    project_name: str = Field(..., min_length=1, max_length=255)
+    query: str = Field(..., min_length=1, max_length=5000)
+    language: Literal["zh", "en", "mixed"] = "zh"
     expansion: Optional[dict] = None
-    total_found: int = 0
-    ai_output: str = ""
+    total_found: int = Field(0, ge=0, le=100_000_000)
+    ai_output: str = Field("", max_length=2_000_000)
 
 
 @router.get("/api/history")
-async def list_history(project_name: Optional[str] = None, limit: int = 50):
+async def list_history(
+    project_name: Optional[str] = Query(None, max_length=255),
+    limit: int = Query(50, ge=1, le=200),
+):
     return hm.list_history(project_name=project_name, limit=limit)
 
 
@@ -53,8 +56,8 @@ async def add_history(req: HistoryAddRequest):
 
 
 class HistoryUpdateRequest(BaseModel):
-    ai_output: Optional[str] = None
-    total_found: Optional[int] = None
+    ai_output: Optional[str] = Field(None, max_length=2_000_000)
+    total_found: Optional[int] = Field(None, ge=0, le=100_000_000)
     expansion: Optional[dict] = None
 
 

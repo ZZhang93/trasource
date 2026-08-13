@@ -4,7 +4,19 @@
       <!-- 标题 -->
       <div class="dialog-header">
         <span class="dialog-title">{{ t('settings.title') }}</span>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <div class="header-right">
+          <label class="sr-only" for="settings-language">{{ t('settings.language') }}</label>
+          <select
+            id="settings-language"
+            v-model="currentLocale"
+            class="locale-select"
+            @change="onLocaleChange"
+          >
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+          <button class="close-btn" :aria-label="t('common.close')" @click="$emit('close')">✕</button>
+        </div>
       </div>
 
       <!-- 标签页 -->
@@ -20,6 +32,17 @@
 
       <!-- 内容 -->
       <div class="tab-body">
+        <div v-if="loadingSettings" class="settings-state" role="status">
+          <span class="state-spinner" aria-hidden="true" />
+          <p>{{ t('settings.loading') }}</p>
+        </div>
+
+        <div v-else-if="loadError" class="settings-state settings-error" role="alert">
+          <p>{{ loadError }}</p>
+          <button class="btn-test" @click="loadSettings">{{ t('common.retry') }}</button>
+        </div>
+
+        <template v-else>
 
         <!-- ── AI 服务 ── -->
         <div v-if="activeTab === 'api'">
@@ -235,6 +258,22 @@
             </datalist>
           </template>
 
+          <div class="key-status-row">
+            <span
+              class="key-status"
+              :class="keyIsConfigured(form.provider) ? 'configured' : 'empty'"
+            >
+              <span class="key-status-dot" aria-hidden="true" />
+              {{ keyStatusLabel(form.provider) }}
+            </span>
+            <button
+              v-if="keyIsConfigured(form.provider)"
+              class="clear-key-btn"
+              type="button"
+              @click="clearCurrentKey"
+            >{{ t('settings.clearKey') }}</button>
+          </div>
+
           <!-- 获取最新模型 + 测试连接 -->
           <div class="form-group action-row">
             <button
@@ -353,15 +392,30 @@
               <span class="about-label">{{ t('settings.aboutAIModel') }}</span>
               <span>{{ t('settings.aboutAIModelValue') }}</span>
             </div>
+            <div class="about-row">
+              <span class="about-label">{{ t('settings.aboutLicense') }}</span>
+              <span>GNU AGPL v3</span>
+            </div>
+          </div>
+          <div class="about-actions">
+            <button class="btn-test" type="button" @click="openExternal(REPOSITORY_URL)">
+              {{ t('settings.viewSource') }}
+            </button>
+            <button class="btn-test" type="button" @click="openExternal(LICENSE_URL)">
+              {{ t('settings.viewLicense') }}
+            </button>
           </div>
         </div>
+
+        </template>
 
       </div>
 
       <!-- 底部 -->
       <div class="dialog-footer">
+        <span v-if="saveError" class="footer-error" role="alert">{{ saveError }}</span>
         <button class="btn-ghost" @click="$emit('close')">{{ t('common.cancel') }}</button>
-        <button class="btn-primary" @click="save" :disabled="saving">
+        <button class="btn-primary" @click="save" :disabled="saving || !settingsLoaded">
           {{ saving ? t('settings.saving') : t('settings.saveSettings') }}
         </button>
       </div>
@@ -372,21 +426,39 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { api } from '@/api/client'
+import { useSearchStore } from '@/stores/search'
 import { useUiStore } from '@/stores/ui'
 import { useI18n } from '@/i18n'
 
 const { t, locale, setLocale } = useI18n()
 const ui = useUiStore()
+const searchStore = useSearchStore()
 
 // 构建时从 package.json 注入
 const appVersion = __APP_VERSION__
+const REPOSITORY_URL = 'https://github.com/ZZhang93/trasource'
+const LICENSE_URL = `${REPOSITORY_URL}/blob/main/LICENSE`
 
-defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [] }>()
 
 const currentLocale = ref(locale.value)
+const loadingSettings = ref(true)
+const settingsLoaded = ref(false)
+const loadError = ref('')
+const saveError = ref('')
 
 function onLocaleChange() {
   setLocale(currentLocale.value)
+}
+
+async function openExternal(url: string) {
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url)
+  } catch (error) {
+    console.error('Failed to open external URL:', error)
+    ui.toast(t('settings.openLinkFailed'), 'error')
+  }
 }
 
 const providerLabelMap: Record<string, string> = {
@@ -495,6 +567,44 @@ const KEY_FIELD: Record<string, string> = {
   kimi: 'kimi_api_key',
   openai_compatible: 'local_api_key',
 }
+const clearedKeys = reactive(new Set<string>())
+
+function formKey(provider: string): string {
+  const field = KEY_FIELD[provider]
+  return field ? String((form as any)[field] || '').trim() : ''
+}
+
+function keyIsConfigured(provider: string): boolean {
+  if (formKey(provider)) return true
+  if (clearedKeys.has(provider)) return false
+  return !!savedKeyMask[provider]
+}
+
+function keyStatusLabel(provider: string): string {
+  if (clearedKeys.has(provider) && !formKey(provider)) {
+    return t('settings.keyClearPending')
+  }
+  if (formKey(provider)) return t('settings.keyReadyToSave')
+  const masked = savedKeyMask[provider]
+  return masked
+    ? t('settings.keyConfiguredAs', { key: masked })
+    : t('settings.keyNotConfigured')
+}
+
+function clearCurrentKey() {
+  const provider = form.provider
+  const field = KEY_FIELD[provider]
+  if (!field) return
+  ;(form as any)[field] = ''
+  clearedKeys.add(provider)
+  testResult.value = null
+}
+
+function keyValueForSave(provider: string): string | undefined {
+  const value = formKey(provider)
+  if (value) return value
+  return clearedKeys.has(provider) ? '' : undefined
+}
 
 function loadCachedModels() {
   try {
@@ -549,6 +659,7 @@ async function fetchModels(manual = false) {
 
 // 切到某个 provider 时，若已配置 key 且本次会话没拉取过，静默自动拉取一次
 function autoFetchIfConfigured(p: string) {
+  if (!settingsLoaded.value) return
   if (autoFetched.has(p)) return
   const hasKey = !!savedKeyMask[p] || !!(form as any)[KEY_FIELD[p]] || p === 'openai_compatible'
   if (!hasKey) return
@@ -558,7 +669,29 @@ function autoFetchIfConfigured(p: string) {
 
 watch(() => form.provider, (p) => autoFetchIfConfigured(p))
 
-onMounted(async () => {
+function normalizeTopK(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 50
+  return Math.max(10, Math.min(200, Math.round(parsed / 10) * 10))
+}
+
+function syncTopK(value: number, notify = false) {
+  const topK = normalizeTopK(value)
+  searchStore.topK = topK
+  localStorage.setItem('trasource_search_top_k', String(topK))
+  if (notify) {
+    window.dispatchEvent(new CustomEvent('settings-updated', {
+      detail: { top_k: topK, provider: form.provider },
+    }))
+  }
+}
+
+async function loadSettings() {
+  loadingSettings.value = true
+  settingsLoaded.value = false
+  loadError.value = ''
+  saveError.value = ''
+  testResult.value = null
   try {
     const [settings, modelsData, prompts] = await Promise.all([
       api.get<any>('/api/settings'),
@@ -571,6 +704,8 @@ onMounted(async () => {
       { value: 'gemini', label: 'Google Gemini' },
       { value: 'claude', label: 'Claude (Anthropic)' },
       { value: 'openai', label: 'ChatGPT (OpenAI)' },
+      { value: 'deepseek', label: 'DeepSeek' },
+      { value: 'kimi', label: 'Kimi (Moonshot AI)' },
       { value: 'openai_compatible', label: '本地模型' },
     ]
 
@@ -584,6 +719,13 @@ onMounted(async () => {
 
     // 填充表单
     form.provider = settings.provider || 'gemini'
+    form.gemini_api_key = ''
+    form.claude_api_key = ''
+    form.openai_api_key = ''
+    form.deepseek_api_key = ''
+    form.kimi_api_key = ''
+    form.local_api_key = ''
+    clearedKeys.clear()
 
     form.gemini_expansion_model = settings.gemini_expansion_model || 'gemini-3-flash-preview'
     form.gemini_extraction_model = settings.gemini_extraction_model || 'gemini-3-flash-preview'
@@ -613,19 +755,27 @@ onMounted(async () => {
     form.local_extraction_model = settings.local_extraction_model || ''
 
     form.proxy_url = settings.proxy_url || ''
-    form.top_k = settings.top_k || 50
+    form.top_k = normalizeTopK(settings.top_k)
 
     defaultPrompts.extraction = prompts.extraction_prompt || ''
     defaultPrompts.expansion = prompts.expansion_prompt || ''
     form.system_prompt_override = settings.system_prompt_override || defaultPrompts.extraction
     form.expansion_prompt_override = settings.expansion_prompt_override || defaultPrompts.expansion
 
+    settingsLoaded.value = true
+    syncTopK(form.top_k)
+
     // 打开设置时，为当前 provider 静默拉取一次最新模型列表
     autoFetchIfConfigured(form.provider)
   } catch (e) {
     console.error('Failed to load settings:', e)
+    loadError.value = t('settings.loadFailed')
+  } finally {
+    loadingSettings.value = false
   }
-})
+}
+
+onMounted(loadSettings)
 
 async function testConnection() {
   testing.value = true
@@ -662,38 +812,40 @@ async function testConnection() {
 }
 
 async function save() {
+  if (!settingsLoaded.value || saving.value) return
   saving.value = true
+  saveError.value = ''
   try {
     await api.put('/api/settings', {
       provider: form.provider,
 
-      gemini_api_key: form.gemini_api_key.trim() || undefined,
+      gemini_api_key: keyValueForSave('gemini'),
       gemini_expansion_model: form.gemini_expansion_model,
       gemini_extraction_model: form.gemini_extraction_model,
 
-      claude_api_key: form.claude_api_key.trim() || undefined,
+      claude_api_key: keyValueForSave('claude'),
       claude_expansion_model: form.claude_expansion_model,
       claude_extraction_model: form.claude_extraction_model,
 
-      openai_api_key: form.openai_api_key.trim() || undefined,
+      openai_api_key: keyValueForSave('openai'),
       openai_expansion_model: form.openai_expansion_model,
       openai_extraction_model: form.openai_extraction_model,
 
-      deepseek_api_key: form.deepseek_api_key.trim() || undefined,
+      deepseek_api_key: keyValueForSave('deepseek'),
       deepseek_expansion_model: form.deepseek_expansion_model,
       deepseek_extraction_model: form.deepseek_extraction_model,
 
-      kimi_api_key: form.kimi_api_key.trim() || undefined,
+      kimi_api_key: keyValueForSave('kimi'),
       kimi_expansion_model: form.kimi_expansion_model,
       kimi_extraction_model: form.kimi_extraction_model,
 
       local_base_url: form.local_base_url.trim(),
-      local_api_key: form.local_api_key.trim() || undefined,
+      local_api_key: keyValueForSave('openai_compatible'),
       local_expansion_model: form.local_expansion_model.trim(),
       local_extraction_model: form.local_extraction_model.trim(),
 
       proxy_url: form.proxy_url.trim(),
-      top_k: form.top_k,
+      top_k: normalizeTopK(form.top_k),
       // 与默认提示词一致时存空串（视为未自定义），默认提示词升级才能生效
       system_prompt_override:
         form.system_prompt_override.trim() === defaultPrompts.extraction.trim()
@@ -702,16 +854,34 @@ async function save() {
         form.expansion_prompt_override.trim() === defaultPrompts.expansion.trim()
           ? '' : form.expansion_prompt_override,
     })
-    window.dispatchEvent(new CustomEvent('settings-updated'))
-    setTimeout(() => { saving.value = false }, 500)
+
+    form.top_k = normalizeTopK(form.top_k)
+    syncTopK(form.top_k, true)
+    ui.toast(t('settings.saveSuccess'), 'success')
+    emit('close')
   } catch (e) {
     console.error('Save failed:', e)
+    saveError.value = t('settings.saveFailed')
+    ui.toast(saveError.value, 'error')
+  } finally {
     saving.value = false
   }
 }
 </script>
 
 <style scoped>
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .overlay {
   position: fixed; inset: 0;
   background: rgba(23,24,28,0.28);
@@ -802,6 +972,29 @@ async function save() {
   overflow-y: auto;
   padding: 20px;
 }
+
+.settings-state {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.settings-state p { margin: 0; }
+.settings-error { color: #c53030; }
+.state-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: settings-spin 700ms linear infinite;
+}
+@keyframes settings-spin { to { transform: rotate(360deg); } }
 
 /* Provider 选择器 */
 .provider-selector {
@@ -903,6 +1096,38 @@ async function save() {
 }
 .inline-btn:hover { border-color: var(--text-muted); color: var(--text); }
 
+.key-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin: -8px 0 16px;
+}
+.key-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.key-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.key-status.configured { color: #2f855a; }
+.key-status.configured .key-status-dot { background: #38a169; }
+.clear-key-btn {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: #c53030;
+  font-size: 11px;
+  cursor: pointer;
+}
+.clear-key-btn:hover { text-decoration: underline; }
+
 .btn-test {
   border: 1px solid var(--accent);
   border-radius: var(--radius);
@@ -970,6 +1195,12 @@ async function save() {
 }
 .about-row:last-child { border-bottom: none; }
 .about-label { color: var(--text-muted); }
+.about-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
 
 /* 底部 */
 .dialog-footer {
@@ -979,5 +1210,11 @@ async function save() {
   padding: 12px 20px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+.footer-error {
+  margin-right: auto;
+  align-self: center;
+  color: #c53030;
+  font-size: 11px;
 }
 </style>

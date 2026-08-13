@@ -7,30 +7,31 @@
       <div v-if="!records.length" class="raw-empty">
         <span class="loading-dot">◌</span> {{ t('records.loading') }}
       </div>
-      <div
+      <button
         v-for="(rec, i) in paginatedRecords"
         :key="rec.id"
+        type="button"
         class="raw-item"
         @click="$emit('open-detail', rec)"
       >
         <!-- 出处轨：定宽等宽列，纵向对齐可扫读 -->
-        <div class="rail">
+        <span class="rail">
           <span class="rail-num">{{ (currentPage - 1) * pageSize + i + 1 }}</span>
           <span class="rail-date">{{ rec.date || rec.year || rec.pub_year || '—' }}</span>
-        </div>
-        <div class="raw-body">
-          <p class="raw-content">{{ rec.content?.slice(0, 110) }}{{ rec.content?.length > 110 ? '…' : '' }}</p>
-          <div class="raw-foot">
+        </span>
+        <span class="raw-body">
+          <span class="raw-content">{{ rec.content?.slice(0, 110) }}{{ rec.content?.length > 110 ? '…' : '' }}</span>
+          <span class="raw-foot">
             <span class="source">{{ rec.source_file }}</span>
             <span v-if="rec.page || rec.page_num" class="page">{{ rec.page || rec.page_num }}</span>
-          </div>
-        </div>
+          </span>
+        </span>
         <span class="row-open" aria-hidden="true">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
             <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
-      </div>
+      </button>
       <div v-if="totalPages > 1" class="pagination">
         <button class="btn-ghost" @click.stop="$emit('page-change', currentPage - 1)" :disabled="currentPage <= 1">{{ t('records.prevPage') }}</button>
         <span class="page-info">{{ t('records.pageInfo', { current: currentPage, total: totalPages }) }}</span>
@@ -107,12 +108,14 @@ const totalPages = computed(() =>
 /* 行：出处轨 + 正文 + 打开指示 */
 .raw-item {
   display: flex; align-items: flex-start; gap: 12px;
+  width: 100%; background: var(--bg); color: inherit; font: inherit; text-align: left;
   padding: 10px 14px; cursor: pointer;
-  border-bottom: 1px solid var(--line);
+  border: none; border-bottom: 1px solid var(--line);
   transition: background var(--transition);
 }
 .raw-item:last-of-type { border-bottom: none; }
 .raw-item:hover { background: var(--surface); }
+.raw-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .rail {
   display: flex; flex-direction: column; gap: 2px;
@@ -124,7 +127,7 @@ const totalPages = computed(() =>
 
 .raw-body { flex: 1; min-width: 0; }
 .raw-content {
-  font-size: 13px; margin: 0 0 4px; color: var(--text); line-height: 1.6;
+  display: block; font-size: 13px; margin: 0 0 4px; color: var(--text); line-height: 1.6;
 }
 .raw-foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3); }
 .source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }

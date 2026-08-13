@@ -4,7 +4,7 @@
 
 import logging
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 import core.notes_manager as nm
@@ -14,16 +14,16 @@ logger = logging.getLogger("backend.notes")
 
 
 class NoteCreateRequest(BaseModel):
-    title: str
-    content_md: str = ""
-    project_name: Optional[str] = None
-    tags: str = ""
+    title: str = Field(..., max_length=1000)
+    content_md: str = Field("", max_length=5_000_000)
+    project_name: Optional[str] = Field(None, max_length=255)
+    tags: str = Field("", max_length=5000)
 
 
 class NoteUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    content_md: Optional[str] = None
-    tags: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=1000)
+    content_md: Optional[str] = Field(None, max_length=5_000_000)
+    tags: Optional[str] = Field(None, max_length=5000)
 
 
 @router.get("/api/notes")

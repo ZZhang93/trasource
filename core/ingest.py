@@ -8,7 +8,6 @@ import re
 import logging
 import chardet
 import duckdb
-import pandas as pd
 from datetime import datetime
 from config import CSV_COLUMN_MAP
 
@@ -83,7 +82,7 @@ def get_records_count_for_files(db_path: str, filenames: list) -> int:
     """计算共享库中指定文件列表的总记录数"""
     if not filenames:
         return 0
-    conn = duckdb.connect(db_path, read_only=True)
+    conn = duckdb.connect(db_path)
     placeholders = ", ".join(["?" for _ in filenames])
     result = conn.execute(
         f"SELECT COUNT(*) FROM documents WHERE source_file IN ({placeholders})",
@@ -195,6 +194,9 @@ def _looks_like_chapter_title(line: str) -> bool:
 # ════════════════════════════════════════════════════════════
 
 def ingest_csv(db_path: str, filepath: str, progress_callback=None) -> dict:
+    # Pandas 是冷启动中最重的依赖之一；只有真正导入 CSV 时才加载。
+    import pandas as pd
+
     logger.info(f"开始导入 CSV: {filepath}")
     encoding = detect_encoding(filepath)
     CHUNK_SIZE = 50_000
@@ -204,41 +206,53 @@ def ingest_csv(db_path: str, filepath: str, progress_callback=None) -> dict:
     conn = duckdb.connect(db_path)
 
     try:
+        conn.execute("BEGIN TRANSACTION")
         total_rows = max(_count_lines_fast(filepath) - 1, 1)
-        chunks = pd.read_csv(
+        insert_cols = ", ".join(ALL_FIELDS)
+        with pd.read_csv(
             filepath, chunksize=CHUNK_SIZE, encoding=encoding,
             encoding_errors="replace", dtype=str, on_bad_lines="skip",
-        )
-        insert_cols = ", ".join(ALL_FIELDS)
-        for chunk_idx, chunk in enumerate(chunks):
-            chunk.columns = [c.strip() for c in chunk.columns]
-            rename_map = {k: v for k, v in CSV_COLUMN_MAP.items() if k in chunk.columns}
-            chunk = chunk.rename(columns=rename_map)
-            chunk = chunk.fillna("")
-            for col in ALL_FIELDS:
-                if col not in chunk.columns:
-                    chunk[col] = ""
-            chunk["source_file"] = os.path.basename(filepath)
-            chunk["file_type"] = "csv"
-            chunk["doc_type"] = "newspaper"
-            chunk["imported_at"] = imported_at
+        ) as chunks:
+            for chunk_idx, chunk in enumerate(chunks):
+                chunk.columns = [c.strip() for c in chunk.columns]
+                rename_map = {k: v for k, v in CSV_COLUMN_MAP.items() if k in chunk.columns}
+                chunk = chunk.rename(columns=rename_map)
+                if "content" not in chunk.columns:
+                    accepted = [name for name, internal in CSV_COLUMN_MAP.items() if internal == "content"]
+                    raise ValueError(
+                        "CSV 缺少必需的正文列；请使用列名 "
+                        + " / ".join(accepted + ["content"])
+                    )
+                chunk = chunk.fillna("")
+                for col in ALL_FIELDS:
+                    if col not in chunk.columns:
+                        chunk[col] = ""
+                chunk["source_file"] = os.path.basename(filepath)
+                chunk["file_type"] = "csv"
+                chunk["doc_type"] = "newspaper"
+                chunk["imported_at"] = imported_at
 
-            before = len(chunk)
-            chunk = chunk[chunk["content"].str.strip() != ""]
-            skipped += before - len(chunk)
-            if len(chunk) == 0:
-                continue
+                before = len(chunk)
+                chunk = chunk[chunk["content"].str.strip() != ""]
+                skipped += before - len(chunk)
+                if len(chunk) == 0:
+                    continue
 
-            # DataFrame 整块插入（DuckDB 零拷贝读取，比逐行快两个数量级）
-            batch = chunk[ALL_FIELDS].astype(str)
-            conn.register("_csv_batch", batch)
-            conn.execute(f"INSERT INTO documents ({insert_cols}) SELECT {insert_cols} FROM _csv_batch")
-            conn.unregister("_csv_batch")
+                # DataFrame 整块插入（DuckDB 零拷贝读取，比逐行快两个数量级）
+                batch = chunk[ALL_FIELDS].astype(str)
+                conn.register("_csv_batch", batch)
+                conn.execute(f"INSERT INTO documents ({insert_cols}) SELECT {insert_cols} FROM _csv_batch")
+                conn.unregister("_csv_batch")
 
-            total_imported += len(chunk)
-            if progress_callback:
-                progress_callback(min((chunk_idx+1)*CHUNK_SIZE/total_rows, 1.0), total_imported)
+                total_imported += len(chunk)
+                if progress_callback:
+                    progress_callback(min((chunk_idx+1)*CHUNK_SIZE/total_rows, 1.0), total_imported)
+        conn.execute("COMMIT")
     except Exception as e:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
         logger.error(f"CSV 导入失败: {e}", exc_info=True)
         raise
     finally:
@@ -455,7 +469,15 @@ def ingest_txt(db_path: str, filepath: str, meta: dict, progress_callback=None) 
 # 5. EPUB
 # ════════════════════════════════════════════════════════════
 
-def ingest_epub(db_path: str, filepath: str, meta: dict, progress_callback=None) -> dict:
+def ingest_epub(
+    db_path: str,
+    filepath: str,
+    meta: dict,
+    progress_callback=None,
+    *,
+    source_filename: str = None,
+    source_file_type: str = "epub",
+) -> dict:
     try:
         import ebooklib
         from ebooklib import epub
@@ -464,8 +486,8 @@ def ingest_epub(db_path: str, filepath: str, meta: dict, progress_callback=None)
         raise ImportError("请先安装依赖: pip install ebooklib beautifulsoup4")
 
     logger.info(f"开始导入 EPUB: {filepath}")
-    filename = os.path.basename(filepath)
-    base = _make_base(meta, filename, "epub")
+    filename = source_filename or os.path.basename(filepath)
+    base = _make_base(meta, filename, source_file_type)
     book = epub.read_epub(filepath)
     records = []
     items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
@@ -507,4 +529,12 @@ def ingest_mobi(db_path: str, filepath: str, meta: dict, progress_callback=None)
     with tempfile.TemporaryDirectory() as tmpdir:
         epub_path = os.path.join(tmpdir, "converted.epub")
         subprocess.run(["ebook-convert", filepath, epub_path], check=True, capture_output=True)
-        return ingest_epub(db_path, epub_path, meta, progress_callback)
+        source_type = os.path.splitext(filepath)[1].lower().lstrip(".") or "mobi"
+        return ingest_epub(
+            db_path,
+            epub_path,
+            meta,
+            progress_callback,
+            source_filename=os.path.basename(filepath),
+            source_file_type=source_type,
+        )

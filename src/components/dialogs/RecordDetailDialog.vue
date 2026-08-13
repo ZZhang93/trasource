@@ -1,13 +1,27 @@
 <template>
   <div class="overlay" @click.self="$emit('close')">
-    <div class="detail-dialog">
+    <div
+      ref="dialogEl"
+      class="detail-dialog"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="titleId"
+      :aria-busy="loadingFull"
+      tabindex="-1"
+      @keydown="handleDialogKeydown"
+    >
       <!-- 标题栏 -->
       <div class="dialog-header">
         <div class="header-left">
           <span class="doc-type-badge">{{ docTypeLabel }}</span>
-          <span class="source-name">{{ record.source_file }}</span>
+          <span :id="titleId" class="source-name">{{ record.source_file }}</span>
         </div>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <button
+          ref="closeButtonEl"
+          class="close-btn"
+          :aria-label="t('common.close')"
+          @click="$emit('close')"
+        >✕</button>
       </div>
 
       <!-- 元数据行 -->
@@ -37,15 +51,19 @@
       <!-- 正文 -->
       <div class="content-area">
         <div class="content-text">{{ fullContent }}</div>
-        <p v-if="loadingFull" class="loading-full">{{ t('detail.loadingFull') }}</p>
+        <p v-if="loadingFull" class="loading-full" role="status">{{ t('detail.loadingFull') }}</p>
+        <div v-else-if="loadError" class="load-error" role="alert">
+          <span>{{ t('detail.loadFullFailed') }}</span>
+          <button ref="retryButtonEl" class="retry-full" @click="loadFullContent">{{ t('common.retry') }}</button>
+        </div>
       </div>
 
       <!-- 底部操作 -->
       <div class="dialog-footer">
-        <button class="btn-ghost" @click="copyContent">
+        <button class="btn-ghost" @click="copyContent" :disabled="loadingFull || loadError">
           {{ copied ? t('detail.copied') : t('detail.copyOriginal') }}
         </button>
-        <button class="btn-primary" @click="emitCreateNote">
+        <button class="btn-primary" @click="emitCreateNote" :disabled="loadingFull || loadError">
           {{ t('detail.createNote') }}
         </button>
       </div>
@@ -54,12 +72,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import type { SearchRecord } from '@/stores/search'
 import { api } from '@/api/client'
 import { useI18n } from '@/i18n'
+import { useProjectStore } from '@/stores/project'
+import { useSearchStore } from '@/stores/search'
 
 const { t } = useI18n()
+const projectStore = useProjectStore()
+const searchStore = useSearchStore()
 
 const props = defineProps<{ record: SearchRecord }>()
 const emit = defineEmits<{
@@ -68,22 +90,87 @@ const emit = defineEmits<{
 }>()
 
 const copied = ref(false)
+const dialogEl = ref<HTMLElement | null>(null)
+const closeButtonEl = ref<HTMLButtonElement | null>(null)
+const retryButtonEl = ref<HTMLButtonElement | null>(null)
+const titleId = `record-detail-title-${props.record.id}`
+let returnFocus: HTMLElement | null = null
 // 列表记录只带预览，打开详情时按 id 拉全文
 const fullContent = ref(props.record.content)
 const loadingFull = ref(false)
+const loadError = ref(false)
 
-onMounted(async () => {
+function focusableElements(): HTMLElement[] {
+  if (!dialogEl.value) return []
+  return Array.from(dialogEl.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )).filter(element => !element.hasAttribute('hidden'))
+}
+
+function handleDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('close')
+    return
+  }
+  if (event.key !== 'Tab') return
+
+  const focusable = focusableElements()
+  if (!focusable.length) {
+    event.preventDefault()
+    dialogEl.value?.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || active === dialogEl.value)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || active === dialogEl.value)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+onMounted(() => {
+  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  void nextTick(() => closeButtonEl.value?.focus())
+  void loadFullContent()
+})
+
+onUnmounted(() => {
+  const target = returnFocus
+  void nextTick(() => {
+    if (target?.isConnected) target.focus()
+  })
+})
+
+async function loadFullContent() {
   if (!props.record.content_truncated) return
+  const retryHadFocus = document.activeElement === retryButtonEl.value
+  loadError.value = false
   loadingFull.value = true
+  if (retryHadFocus) void nextTick(() => closeButtonEl.value?.focus())
   try {
-    const full = await api.get<SearchRecord>(`/api/search/record/${props.record.id}`)
+    const params = new URLSearchParams()
+    if (projectStore.currentProjectName) params.set('project_name', projectStore.currentProjectName)
+    // 只有实际进入 AI context 的记录才使用 search_id 约束；原始结果列表中的
+    // 其他记录仍以 project_name 做访问控制，否则会被后端正确地拒绝为越界。
+    if (searchStore.searchId && searchStore.contextRecordIds.includes(props.record.id)) {
+      params.set('search_id', searchStore.searchId)
+    }
+    const suffix = params.size ? `?${params.toString()}` : ''
+    const full = await api.get<SearchRecord>(`/api/search/record/${props.record.id}${suffix}`)
     fullContent.value = full.content
   } catch {
-    // 拉取失败时保留预览内容
+    // 保留预览内容，但明确告诉用户它不是完整原文。
+    loadError.value = true
   } finally {
     loadingFull.value = false
   }
-})
+}
 
 function emitCreateNote() {
   emit('create-note', { ...props.record, content: fullContent.value, content_truncated: false })
@@ -210,6 +297,17 @@ async function copyContent() {
   font-size: 12px;
   color: var(--text-muted);
   margin: 10px 0 0;
+}
+
+.load-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding: 10px 12px;
+  border: 1px solid rgba(220,58,52,0.22); border-radius: var(--radius);
+  color: var(--danger); background: var(--danger-soft); font-size: 12px;
+}
+.retry-full {
+  flex-shrink: 0; border: 1px solid currentColor; border-radius: var(--radius-sm);
+  padding: 3px 8px; background: transparent; color: inherit; cursor: pointer;
 }
 
 .content-area {

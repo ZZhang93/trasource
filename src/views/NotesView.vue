@@ -21,11 +21,13 @@
 
       <!-- 笔记列表 -->
       <div class="notes-list" v-if="!notesStore.loading">
-        <div
+        <button
           v-for="note in filteredNotes"
           :key="note.id"
+          type="button"
           class="note-item"
           :class="{ active: notesStore.currentNote?.id === note.id }"
+          :aria-pressed="notesStore.currentNote?.id === note.id"
           @click="selectNote(note)"
         >
           <div class="note-item-title">{{ note.title || t('notes.untitled') }}</div>
@@ -36,7 +38,7 @@
           <div v-if="note.tags" class="note-tags">
             <span v-for="tag in splitTags(note.tags)" :key="tag" class="tag-chip">{{ tag }}</span>
           </div>
-        </div>
+        </button>
 
         <div v-if="filteredNotes.length === 0" class="empty-list">
           <p>{{ t('notes.emptyNotes') }}</p>
@@ -62,8 +64,8 @@
           <span class="save-status">{{ saveStatus }}</span>
           <button class="tab-btn" :class="{ active: editorMode === 'edit' }" @click="editorMode = 'edit'">{{ t('notes.edit') }}</button>
           <button class="tab-btn" :class="{ active: editorMode === 'preview' }" @click="editorMode = 'preview'">{{ t('notes.preview') }}</button>
-          <button class="btn-primary" @click="saveNote" :disabled="!isDirty || notesStore.saving" style="font-size:12px">
-            {{ notesStore.saving ? t('notes.saving') : t('notes.save') }}
+          <button class="btn-primary" @click="saveNote" :disabled="!isDirty || isCurrentNoteSaving" style="font-size:12px">
+            {{ isCurrentNoteSaving ? t('notes.saving') : t('notes.save') }}
           </button>
           <button class="btn-ghost" @click="exportMd" style="font-size:12px">{{ t('notes.export') }}</button>
           <template v-if="deleteConfirming">
@@ -126,14 +128,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { renderMarkdown } from '@/utils/markdown'
 import { useProjectStore } from '@/stores/project'
 import { useNotesStore, type Note } from '@/stores/notes'
 import { useUiStore } from '@/stores/ui'
 import { useI18n } from '@/i18n'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const projectStore = useProjectStore()
 const notesStore = useNotesStore()
 const ui = useUiStore()
@@ -141,16 +150,34 @@ const ui = useUiStore()
 // 筛选
 const filterProject = ref(projectStore.currentProjectName || '')
 
-// 编辑状态
+// 编辑状态。revision 在每次用户输入时单调递增，保存响应只有在
+// noteId 和 revision 都仍匹配时，才能把当前缓冲区标记为已保存。
 const editTitle = ref('')
 const editContent = ref('')
 const editTags = ref('')
 const editorMode = ref<'edit' | 'preview'>('edit')
 const isDirty = ref(false)
 const showAutoSaveToast = ref(false)
+const deleteConfirming = ref(false)
+const switchingNote = ref(false)
+const creatingNote = ref(false)
+let editRevision = 0
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let autoSaveToastTimer: ReturnType<typeof setTimeout> | null = null
+let removeTauriCloseListener: (() => void) | null = null
+let componentUnmounted = false
+let activeSave: {
+  noteId: number
+  revision: number
+  promise: Promise<boolean>
+} | null = null
+
+const isCurrentNoteSaving = computed(() =>
+  notesStore.isNoteSaving(notesStore.currentNote?.id),
+)
 
 const saveStatus = computed(() => {
-  if (notesStore.saving) return t('notes.saving')
+  if (isCurrentNoteSaving.value) return t('notes.saving')
   if (!isDirty.value) return t('notes.saved')
   return t('notes.unsaved')
 })
@@ -167,92 +194,228 @@ const filteredNotes = computed(() => {
   return notesStore.notes.filter(n => n.project_name === filterProject.value)
 })
 
-function onSaveNote() { saveNote() }
+function clearAutoSaveTimer() {
+  if (!autoSaveTimer) return
+  clearTimeout(autoSaveTimer)
+  autoSaveTimer = null
+}
+
+function showSavedToast() {
+  showAutoSaveToast.value = true
+  if (autoSaveToastTimer) clearTimeout(autoSaveToastTimer)
+  autoSaveToastTimer = setTimeout(() => {
+    showAutoSaveToast.value = false
+    autoSaveToastTimer = null
+  }, 2000)
+}
+
+function onSaveNote() {
+  void saveNote()
+}
+
+function handlePageHide() {
+  // Browser/Tauri window shutdown cannot await application code, but starting
+  // the same queued flush here gives an in-flight keep-alive window. Normal
+  // in-app navigation is fully awaited by onBeforeRouteLeave below.
+  void flushCurrentNote({ notifyError: false })
+}
+
+async function registerTauriCloseFlush() {
+  if (!('__TAURI_INTERNALS__' in window)) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const appWindow = getCurrentWindow()
+    const unlisten = await appWindow.onCloseRequested(async (event) => {
+      if (!isDirty.value && !isCurrentNoteSaving.value) return
+      event.preventDefault()
+      if (await flushCurrentNote()) {
+        // destroy() bypasses a second close-request event after the awaited
+        // save has completed; the Rust window lifecycle still cleans up the
+        // backend sidecar on WindowEvent::Destroyed.
+        await appWindow.destroy()
+      }
+    })
+    if (componentUnmounted) unlisten()
+    else removeTauriCloseListener = unlisten
+  } catch (error) {
+    console.warn('Unable to register Tauri close flush:', error)
+  }
+}
 
 onMounted(async () => {
-  await notesStore.fetchNotes()
   window.addEventListener('save-note', onSaveNote)
+  window.addEventListener('pagehide', handlePageHide)
+  window.addEventListener('beforeunload', handlePageHide)
+  void registerTauriCloseFlush()
+  try {
+    await notesStore.fetchNotes()
+  } catch {
+    ui.toast(t('notes.loadFailed'), 'error')
+  }
 })
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
+  componentUnmounted = true
+  clearAutoSaveTimer()
+  if (autoSaveToastTimer) clearTimeout(autoSaveToastTimer)
+  removeTauriCloseListener?.()
+  removeTauriCloseListener = null
   window.removeEventListener('save-note', onSaveNote)
+  window.removeEventListener('pagehide', handlePageHide)
+  window.removeEventListener('beforeunload', handlePageHide)
+  void flushCurrentNote({ notifyError: false })
+})
+
+onBeforeRouteLeave(async () => {
+  const saved = await flushCurrentNote()
+  return saved || false
 })
 
 watch(() => notesStore.currentNote, (note) => {
+  clearAutoSaveTimer()
+  editRevision += 1
   if (note) {
     editTitle.value = note.title
     editContent.value = note.content_md
     editTags.value = note.tags
-    isDirty.value = false
-    deleteConfirming.value = false
+  } else {
+    editTitle.value = ''
+    editContent.value = ''
+    editTags.value = ''
   }
-})
+  isDirty.value = false
+  deleteConfirming.value = false
+}, { immediate: true })
 
-function selectNote(note: Note) {
-  if (isDirty.value) autoSave()
-  notesStore.currentNote = note
+async function selectNote(note: Note) {
+  if (switchingNote.value || notesStore.currentNote?.id === note.id) return
+  switchingNote.value = true
+  try {
+    if (!await flushCurrentNote()) return
+    notesStore.currentNote = note
+  } finally {
+    switchingNote.value = false
+  }
 }
 
 function markDirty() {
+  editRevision += 1
   isDirty.value = true
 }
 
-// 3秒自动保存
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+// 3 秒无输入后自动保存。计时器只决定何时拍快照，真正的写入由 store
+// 按 noteId 串行执行，因此手动保存、切换和自动保存不会并发乱序。
 watch([editTitle, editContent, editTags], () => {
   if (!isDirty.value) return
-  if (autoSaveTimer) clearTimeout(autoSaveTimer)
-  autoSaveTimer = setTimeout(() => autoSave(), 3000)
+  clearAutoSaveTimer()
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null
+    void persistCurrentNote({ auto: true })
+  }, 3000)
 })
 
-async function autoSave() {
-  if (!notesStore.currentNote || !isDirty.value) return
-  try {
-    await notesStore.saveNote(notesStore.currentNote.id, {
-      title: editTitle.value,
-      content_md: editContent.value,
-      tags: editTags.value,
-    })
-    isDirty.value = false
-    showAutoSaveToast.value = true
-    setTimeout(() => { showAutoSaveToast.value = false }, 2000)
-  } catch {
-    ui.toast(t('notes.saveFailed'), 'error')
+interface PersistOptions {
+  auto?: boolean
+  notifyError?: boolean
+}
+
+async function persistCurrentNote(options: PersistOptions = {}): Promise<boolean> {
+  const note = notesStore.currentNote
+  if (!note) return true
+
+  if (!isDirty.value) {
+    if (activeSave?.noteId === note.id) return activeSave.promise
+    await notesStore.flushNoteSaves(note.id)
+    return true
   }
+
+  clearAutoSaveTimer()
+  const noteId = note.id
+  const revision = editRevision
+  const data = {
+    title: editTitle.value,
+    content_md: editContent.value,
+    tags: editTags.value,
+  }
+
+  if (activeSave?.noteId === noteId && activeSave.revision === revision) {
+    return activeSave.promise
+  }
+
+  const promise = (async () => {
+    try {
+      const result = await notesStore.saveNote(noteId, data, revision)
+      const responseIsCurrent =
+        notesStore.currentNote?.id === result.noteId
+        && editRevision === result.revision
+
+      // New input may have arrived while the request was in flight. In that
+      // case it remains dirty and its timer/next flush will persist it.
+      if (responseIsCurrent) {
+        isDirty.value = false
+        if (options.auto) showSavedToast()
+      }
+      return true
+    } catch {
+      if (options.notifyError !== false) ui.toast(t('notes.saveFailed'), 'error')
+      return false
+    }
+  })()
+
+  activeSave = { noteId, revision, promise }
+  void promise.finally(() => {
+    if (activeSave?.promise === promise) activeSave = null
+  })
+  return promise
+}
+
+async function flushCurrentNote(options: PersistOptions = {}): Promise<boolean> {
+  const noteId = notesStore.currentNote?.id
+  if (noteId == null) return true
+
+  // Input can still arrive while a slow request is being awaited (for example
+  // immediately after the user clicks another note). Keep taking and saving
+  // fresh snapshots until the same note is actually clean before switching.
+  while (notesStore.currentNote?.id === noteId) {
+    if (!await persistCurrentNote(options)) return false
+    if (!isDirty.value) return true
+  }
+  return true
 }
 
 async function saveNote() {
-  if (!notesStore.currentNote) return
-  if (autoSaveTimer) clearTimeout(autoSaveTimer)
-  try {
-    await notesStore.saveNote(notesStore.currentNote.id, {
-      title: editTitle.value,
-      content_md: editContent.value,
-      tags: editTags.value,
-    })
-    isDirty.value = false
-  } catch {
-    ui.toast(t('notes.saveFailed'), 'error')
-  }
+  await flushCurrentNote()
 }
 
 async function handleNewNote() {
-  const note = await notesStore.createNote({
-    title: t('notes.defaultTitle'),
-    content_md: '',
-    project_name: filterProject.value || projectStore.currentProjectName || '',
-    tags: '',
-  })
-  notesStore.currentNote = note
+  if (creatingNote.value) return
+  creatingNote.value = true
+  try {
+    if (!await flushCurrentNote()) return
+    await notesStore.createNote({
+      title: t('notes.defaultTitle'),
+      content_md: '',
+      project_name: filterProject.value || projectStore.currentProjectName || '',
+      tags: '',
+    })
+  } catch {
+    ui.toast(t('notes.createFailed'), 'error')
+  } finally {
+    creatingNote.value = false
+  }
 }
 
-const deleteConfirming = ref(false)
-
 async function doDelete() {
-  if (!notesStore.currentNote) return
+  const noteId = notesStore.currentNote?.id
+  if (noteId == null) return
   deleteConfirming.value = false
+  clearAutoSaveTimer()
   try {
-    await notesStore.deleteNote(notesStore.currentNote.id)
+    // Drain an already-started write before deleting. Unsaved editor text is
+    // intentionally discarded because the user confirmed deletion.
+    await notesStore.flushNoteSaves(noteId)
+    await notesStore.deleteNote(noteId)
+    isDirty.value = false
     ui.toast(t('notes.deleted'), 'success')
   } catch {
     ui.toast(t('notes.deleteFailed'), 'error')
@@ -272,18 +435,19 @@ function exportMd() {
 }
 
 function splitTags(tags: string): string[] {
-  return tags.split(',').map(t => t.trim()).filter(Boolean)
+  return tags.split(',').map(tag => tag.trim()).filter(Boolean)
 }
 
 function formatDate(dt: string): string {
   if (!dt) return ''
-  const d = new Date(dt.replace('T', ' '))
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  if (diff < 60000) return t('notes.justNow')
-  if (diff < 3600000) return t('notes.minutesAgo', { n: Math.floor(diff / 60000) })
-  if (diff < 86400000) return t('notes.hoursAgo', { n: Math.floor(diff / 3600000) })
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+  const d = new Date(dt)
+  if (Number.isNaN(d.getTime())) return dt
+  const diff = Date.now() - d.getTime()
+  if (diff >= 0 && diff < 60000) return t('notes.justNow')
+  if (diff >= 0 && diff < 3600000) return t('notes.minutesAgo', { n: Math.floor(diff / 60000) })
+  if (diff >= 0 && diff < 86400000) return t('notes.hoursAgo', { n: Math.floor(diff / 3600000) })
+  const dateLocale = locale.value === 'en' ? 'en-US' : 'zh-CN'
+  return d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })
 }
 </script>
 
@@ -360,6 +524,13 @@ function formatDate(dt: string): string {
 }
 
 .note-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   padding: 8px 10px;
   border-radius: var(--radius);
   cursor: pointer;
@@ -367,6 +538,10 @@ function formatDate(dt: string): string {
   margin-bottom: 2px;
 }
 .note-item:hover { background: var(--hover-bg); }
+.note-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .note-item.active {
   background: var(--hover-bg);
   border-left: 2px solid var(--accent);

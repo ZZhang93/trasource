@@ -54,13 +54,29 @@ class LLMProvider(ABC):
 class GeminiProvider(LLMProvider):
 
     def __init__(self, api_key: str, model_name: str, proxy_url: str = ""):
-        import google.generativeai as genai
-        self.genai = genai
+        from google import genai
+        from google.genai import types
+
+        client_kwargs = {"api_key": api_key}
         if proxy_url:
-            import os
-            os.environ["HTTPS_PROXY"] = proxy_url
-        genai.configure(api_key=api_key)
+            # google-genai uses httpx for both sync and async clients. Supplying
+            # the proxy on this client avoids mutating process-wide proxy env vars.
+            client_kwargs["http_options"] = types.HttpOptions(
+                client_args={"proxy": proxy_url},
+                async_client_args={"proxy": proxy_url},
+            )
+
+        self.genai = genai
+        self.types = types
+        self.client = genai.Client(**client_kwargs)
         self.model_name = model_name
+
+    def _generation_config(self, system_prompt, temperature, max_tokens):
+        return self.types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
 
     def _iter_text(self, response) -> Generator[str, None, None]:
         """从 Gemini 响应中提取文本，跳过 thinking 块。"""
@@ -73,7 +89,7 @@ class GeminiProvider(LLMProvider):
                     text = getattr(part, 'text', None)
                     if text:
                         yield text
-            except (AttributeError, IndexError):
+            except (AttributeError, IndexError, TypeError):
                 if hasattr(chunk, 'text') and chunk.text:
                     yield chunk.text
 
@@ -98,51 +114,33 @@ class GeminiProvider(LLMProvider):
             raise RuntimeError("无法从 Gemini 响应中提取文本")
 
     def generate_stream(self, prompt, system_prompt=None, temperature=0.1, max_tokens=8192):
-        model = self.genai.GenerativeModel(
-            model_name=self.model_name,
-            system_instruction=system_prompt,
-        )
-        response = model.generate_content(
-            prompt,
-            stream=True,
-            generation_config=self.genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            ),
+        response = self.client.models.generate_content_stream(
+            model=self.model_name,
+            contents=prompt,
+            config=self._generation_config(system_prompt, temperature, max_tokens),
         )
         yield from self._iter_text(response)
 
     def generate(self, prompt, system_prompt=None, temperature=0.1, max_tokens=8192):
-        model = self.genai.GenerativeModel(
-            model_name=self.model_name,
-            system_instruction=system_prompt,
-        )
-        response = model.generate_content(
-            prompt,
-            generation_config=self.genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            ),
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=self._generation_config(system_prompt, temperature, max_tokens),
         )
         return self._extract_text(response)
 
     def chat_stream(self, messages, system_prompt=None, temperature=0.7, max_tokens=4096):
-        model = self.genai.GenerativeModel(
-            model_name=self.model_name,
-            system_instruction=system_prompt,
-        )
-        history = []
-        for msg in messages[:-1]:
+        contents = []
+        for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
-            history.append({"role": role, "parts": [msg["content"]]})
-        chat = model.start_chat(history=history)
-        response = chat.send_message(
-            messages[-1]["content"],
-            stream=True,
-            generation_config=self.genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            ),
+            contents.append(self.types.Content(
+                role=role,
+                parts=[self.types.Part.from_text(text=msg["content"])],
+            ))
+        response = self.client.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config=self._generation_config(system_prompt, temperature, max_tokens),
         )
         yield from self._iter_text(response)
 

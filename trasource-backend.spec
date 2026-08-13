@@ -11,6 +11,11 @@ hiddenimports = (
     ['config']
     + collect_submodules('backend')
     + collect_submodules('core')
+    + collect_submodules(
+        'google.genai',
+        filter=lambda name: not name.startswith('google.genai.tests')
+        and name != 'google.genai._test_api_client',
+    )
     + collect_submodules('uvicorn')      # uvicorn 的 loop/protocol 实现是动态导入的
     + ['multipart', 'python_multipart']
 )

@@ -18,9 +18,9 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import iterate_in_threadpool
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 import core.project_manager as pm
 import core.retriever as retriever
@@ -33,27 +33,44 @@ logger = logging.getLogger("backend.search")
 
 # ── context 服务端缓存（LRU，容量 8） ──────────────────────
 _CONTEXT_CACHE_MAX = 8
-_context_cache: "OrderedDict[str, str]" = OrderedDict()
+_context_cache: "OrderedDict[str, dict]" = OrderedDict()
 _context_lock = threading.Lock()
 
 PREVIEW_CHARS = 240
 
 
-def _cache_context(context: str) -> str:
+def _cache_context(context: str, record_ids: list[int], project_name: str) -> str:
     search_id = uuid.uuid4().hex
     with _context_lock:
-        _context_cache[search_id] = context
+        _context_cache[search_id] = {
+            "context": context,
+            "record_ids": tuple(record_ids),
+            "project_name": project_name,
+        }
         while len(_context_cache) > _CONTEXT_CACHE_MAX:
             _context_cache.popitem(last=False)
     return search_id
 
 
-def get_cached_context(search_id: str) -> Optional[str]:
+def get_cached_context_entry(search_id: str, project_name: str = "") -> Optional[dict]:
     with _context_lock:
-        ctx = _context_cache.get(search_id)
-        if ctx is not None:
+        entry = _context_cache.get(search_id)
+        if entry is not None and project_name and entry["project_name"] != project_name:
+            return None
+        if entry is not None:
             _context_cache.move_to_end(search_id)
-        return ctx
+            return {
+                "context": entry["context"],
+                "record_ids": list(entry["record_ids"]),
+                "project_name": entry["project_name"],
+            }
+        return None
+
+
+def get_cached_context(search_id: str, project_name: str = "") -> Optional[str]:
+    """Backward-compatible context lookup, optionally enforcing project binding."""
+    entry = get_cached_context_entry(search_id, project_name)
+    return entry["context"] if entry else None
 
 
 def _trim_record(rec: dict) -> dict:
@@ -70,28 +87,46 @@ def _trim_record(rec: dict) -> dict:
 
 class ExpandRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=5000)
-    language: str = "zh"
-    project_name: str
+    language: Literal["zh", "en", "mixed"] = "zh"
+    project_name: str = Field(..., min_length=1, max_length=255)
 
 
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=5000)
-    language: str = "zh"
-    project_name: str
-    weighted_tokens: Optional[List[List]] = None   # [[term, weight], ...]
-    date_from: Optional[str] = ""
-    date_to: Optional[str] = ""
-    file_filter_list: Optional[List[str]] = None   # 多选文件名列表
+    language: Literal["zh", "en", "mixed"] = "zh"
+    project_name: str = Field(..., min_length=1, max_length=255)
+    weighted_tokens: Optional[List[tuple[str, int]]] = Field(None, max_length=100)
+    date_from: Optional[str] = Field("", max_length=10, pattern=r"^(?:\d{4}(?:-\d{2}(?:-\d{2})?)?)?$")
+    date_to: Optional[str] = Field("", max_length=10, pattern=r"^(?:\d{4}(?:-\d{2}(?:-\d{2})?)?)?$")
+    file_filter_list: Optional[List[str]] = Field(None, max_length=500)
     top_k: Optional[int] = Field(50, ge=1, le=500)
+
+    @field_validator("weighted_tokens")
+    @classmethod
+    def validate_weighted_tokens(cls, value):
+        if value is None:
+            return None
+        cleaned = []
+        seen = set()
+        for term, weight in value:
+            term = term.strip()
+            if not term or len(term) > 100:
+                raise ValueError("检索词长度必须在 1-100 字符之间")
+            if weight < 1 or weight > 10:
+                raise ValueError("检索词权重必须在 1-10 之间")
+            if term not in seen:
+                cleaned.append((term, weight))
+                seen.add(term)
+        return cleaned
 
 
 class ExtractRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=5000)
-    search_id: str
-    language: str = "zh"
-    project_name: str
-    model_name: Optional[str] = None
-    system_prompt: Optional[str] = None
+    search_id: str = Field(..., min_length=1, max_length=64)
+    language: Literal["zh", "en", "mixed"] = "zh"
+    project_name: str = Field(..., min_length=1, max_length=255)
+    model_name: Optional[str] = Field(None, max_length=200)
+    system_prompt: Optional[str] = Field(None, max_length=100_000)
 
 
 # ── 端点 ─────────────────────────────────────────────────
@@ -100,6 +135,7 @@ class ExtractRequest(BaseModel):
 def expand_query(req: ExpandRequest):
     """AI 查询扩展 — 返回关键词+权重 JSON（线程池执行，不阻塞事件循环）"""
     try:
+        pm.get_project_meta(req.project_name)
         shared_db = pm.get_shared_db_path()
         sources = retriever.get_db_context_summary(shared_db)
 
@@ -126,12 +162,13 @@ def expand_query(req: ExpandRequest):
 def execute_search(req: SearchRequest):
     """加权检索 — 返回记录预览列表 + search_id（context 留在服务端）"""
     try:
+        pm.get_project_meta(req.project_name)
         shared_db = pm.get_shared_db_path()
         shared_files = pm.get_project_shared_files(req.project_name)
 
         tokens = None
         if req.weighted_tokens:
-            tokens = [(str(t[0]), int(t[1])) for t in req.weighted_tokens]
+            tokens = list(req.weighted_tokens)
 
         result = retriever.search(
             db_path=shared_db,
@@ -142,15 +179,20 @@ def execute_search(req: SearchRequest):
             top_k=req.top_k or 50,
             weighted_tokens=tokens,
             language=req.language,
-            allowed_files=shared_files or None,
+            allowed_files=shared_files,
         )
 
-        search_id = _cache_context(result["context"]) if result["context"] else ""
+        context_record_ids = result["context_record_ids"]
+        search_id = (
+            _cache_context(result["context"], context_record_ids, req.project_name)
+            if result["context"] else ""
+        )
         return {
             "records":       [_trim_record(r) for r in result["records"]],
             "total_found":   result["total_found"],
             "search_id":     search_id,
             "context_chars": result["context_chars"],
+            "context_record_ids": context_record_ids,
             "truncated":     result["truncated"],
             "tokens":        result["tokens"],
         }
@@ -160,19 +202,36 @@ def execute_search(req: SearchRequest):
 
 
 @router.get("/api/search/record/{record_id}")
-def get_record(record_id: int):
+def get_record(
+    record_id: int,
+    project_name: Optional[str] = None,
+    search_id: Optional[str] = None,
+):
     """按 id 返回单条完整记录（详情弹窗取全文）"""
+    if not project_name and not search_id:
+        raise HTTPException(status_code=400, detail="必须提供 project_name 或 search_id")
+    if search_id:
+        entry = get_cached_context_entry(search_id, project_name or "")
+        if entry is None or record_id not in entry["record_ids"]:
+            raise HTTPException(status_code=404, detail="记录不在本次检索上下文中")
     shared_db = pm.get_shared_db_path()
     rec = retriever.get_record_by_id(shared_db, record_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="记录不存在")
+    if project_name and not search_id:
+        try:
+            allowed_files = pm.get_project_shared_files(project_name)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        if rec.get("source_file") not in allowed_files:
+            raise HTTPException(status_code=404, detail="记录不属于当前项目")
     return rec
 
 
 @router.post("/api/search/extract")
 async def stream_extract(req: ExtractRequest):
     """AI 史料摘录 — SSE 流式响应；错误以独立 error 事件下发"""
-    context = get_cached_context(req.search_id)
+    context = get_cached_context(req.search_id, req.project_name)
 
     async def generate():
         if context is None:

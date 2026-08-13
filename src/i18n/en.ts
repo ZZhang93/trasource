@@ -11,6 +11,23 @@ export default {
   'common.clear': 'Clear',
   'common.ok': 'OK',
 
+  // ── Startup ─────────────────────────────────────────
+  'startup.eyebrow': 'Local Research Workspace',
+  'startup.title': 'Preparing Trasource',
+  'startup.description': 'Starting the local search and document services. The runtime needs a moment to load.',
+  'startup.firstStartHint': 'The first launch usually takes about 20–40 seconds; later launches are typically faster.',
+  'startup.reconnectingTitle': 'Restoring Local Services',
+  'startup.reconnectingDescription': 'The local backend connection was interrupted. Your current page and research are preserved and will resume automatically.',
+  'startup.stagePreparing': 'Preparing to start…',
+  'startup.stageLaunching': 'Starting local services…',
+  'startup.stageChecking': 'Checking service status · attempt {attempt}',
+  'startup.stageReconnecting': 'Reconnecting · attempt {attempt}',
+  'startup.elapsed': 'Waiting {seconds}s',
+  'startup.failedTitle': 'Local Service Could Not Start',
+  'startup.failedHint': 'Check that no other program is using the service port, then retry. Restart the app if the problem continues.',
+  'startup.retry': 'Try Again',
+  'startup.localNote': 'Documents and settings stay on this device',
+
   // ── Sidebar ─────────────────────────────────────────
   'sidebar.appName': 'Trasource · 问渠',
   'sidebar.search': 'Search',
@@ -71,10 +88,15 @@ export default {
   'settings.deepseekApiKey': 'DeepSeek API Key',
   'settings.kimiApiKey': 'Kimi API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
-  'settings.apiKeyHint': 'API Key is stored locally only and never uploaded to any server',
-  'settings.apiKeyLocalHint': 'API Key is stored locally',
+  'settings.apiKeyHint': 'Stored on this device and sent only to the selected AI provider when making requests',
+  'settings.apiKeyLocalHint': 'Stored on this device and used only for requests to the selected AI service',
   'settings.showKey': 'Show',
   'settings.hideKey': 'Hide',
+  'settings.keyConfiguredAs': 'Configured: {key}',
+  'settings.keyReadyToSave': 'New key will take effect after saving',
+  'settings.keyNotConfigured': 'No API key configured',
+  'settings.keyClearPending': 'API key will be cleared when saved',
+  'settings.clearKey': 'Clear key',
 
   // Models
   'settings.expansionModelLabel': 'Keyword Analysis Model',
@@ -119,13 +141,21 @@ export default {
   'settings.aboutDatabase': 'Database',
   'settings.aboutAIModel': 'AI Models',
   'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / Local Models',
+  'settings.aboutLicense': 'Open-source License',
+  'settings.viewSource': 'View Source',
+  'settings.viewLicense': 'View License',
+  'settings.openLinkFailed': 'Could not open the external link',
 
   // Language
   'settings.language': 'Language',
 
   // Save
+  'settings.loading': 'Loading settings…',
+  'settings.loadFailed': 'Settings could not be loaded. Saving is disabled to protect your existing configuration.',
   'settings.saving': 'Saving...',
   'settings.saveSettings': 'Save Settings',
+  'settings.saveSuccess': 'Settings saved',
+  'settings.saveFailed': 'Failed to save settings. Please try again.',
 
   // ── Import Dialog ───────────────────────────────────
   'import.title': 'Import Documents',
@@ -166,6 +196,7 @@ export default {
   'import.fileReadFailed': 'File read failed',
   'import.sseDisconnected': 'SSE connection lost',
   'import.literatureFile': 'Document Files',
+  'import.fileFilterName': 'Document files',
 
   // ── Library Dialog ──────────────────────────────────
   'library.title': 'Library Management',
@@ -180,6 +211,7 @@ export default {
   'library.removeFromProject': 'Remove from Project',
   'library.removing': 'Removing...',
   'library.removeTooltip': 'Remove from project (kept in library)',
+  'library.removeFromProjectTooltip': 'Remove from the current project (kept in the library)',
   'library.deleteFromLibrary': 'Delete from library',
   'library.confirmDelete': 'Confirm Delete',
   'library.usedByProjects': 'Used by {projects}',
@@ -194,6 +226,7 @@ export default {
   'library.removeFailed': 'Failed to remove',
   'library.deletedFromLibrary': 'Deleted "{filename}" from library',
   'library.deleteFailed': 'Failed to delete',
+  'library.tenThousand': ' × 10,000',
 
   // ── Record Detail Dialog ────────────────────────────
   'detail.newspaper': 'Newspaper',
@@ -201,12 +234,14 @@ export default {
   'detail.paper': 'Paper',
   'detail.interview': 'Interview',
   'detail.document': 'Document',
+  'detail.literature': 'Document',
   'detail.year': '{year}',
   'detail.page': 'Page {page}',
   'detail.relevanceScore': 'Relevance {score}',
   'detail.copyOriginal': 'Copy Original',
   'detail.copied': 'Copied',
   'detail.createNote': 'Create Note',
+  'detail.loadFullFailed': 'The full text could not be loaded. Only a preview is shown; retry before copying or creating a note.',
 
   // ── Search Header ───────────────────────────────────
   'search.placeholder': 'e.g., grain output and procurement during the Great Leap Forward…',
@@ -248,7 +283,13 @@ export default {
   'extraction.copy': 'Copy',
   'extraction.sourcesTitle': 'Cited sources · {count}',
   'extraction.viewOriginal': 'View Original',
-
+  'extraction.viewFullOriginal': 'View Full Original',
+  'extraction.resultCount': '{count} passages',
+  'extraction.unknownCitation': 'No citation provided by AI',
+  'extraction.sourceMatched': 'Source located',
+  'extraction.sourceUnmatched': 'Source not located',
+  'extraction.unmatchedHint': 'Could not reliably locate the original record',
+  'extraction.contextTruncated': 'The AI context limit was reached; these passages only reflect records actually sent to the model.',
   // ── Chat Panel ──────────────────────────────────────
   'chat.title': 'Follow-up Questions',
   'chat.quoteExtraction': 'Quote Extraction',
@@ -306,6 +347,8 @@ export default {
   'notes.newNoteBtn': 'New Note',
   'notes.autoSaved': 'Auto-saved',
   'notes.saveFailed': 'Failed to save note',
+  'notes.loadFailed': 'Failed to load notes',
+  'notes.createFailed': 'Failed to create note',
   'notes.deleted': 'Note deleted',
   'notes.deleteFailed': 'Failed to delete',
   'notes.defaultTitle': 'New Note',

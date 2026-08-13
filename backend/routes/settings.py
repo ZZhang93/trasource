@@ -4,8 +4,8 @@
 
 import logging
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
 
 import config
 import core.settings_manager as sm
@@ -109,7 +109,7 @@ _heal_settings_file()
 
 
 def _get_settings() -> dict:
-    s = sm.load_settings(SETTINGS_FILE)
+    s = sm.load_settings(SETTINGS_FILE, strict=True)
     # 迁移旧字段名
     for old_key, new_key in _MIGRATION_MAP.items():
         if old_key in s and new_key not in s:
@@ -122,15 +122,20 @@ def _get_settings() -> dict:
 
 def _mask_key(key: str) -> str:
     """脱敏显示 API Key"""
-    if key and len(key) > 8:
-        return key[:8] + "•" * (len(key) - 8)
-    return key or ""
+    if not key:
+        return ""
+    # 短 token 也绝不原样返回；前端只需要知道“已配置”以及少量前缀提示。
+    visible = min(4, max(0, len(key) - 4))
+    return key[:visible] + "•" * max(4, len(key) - visible)
 
 
 @router.get("/api/settings")
 async def get_settings():
     """返回当前设置（所有 API Key 脱敏显示）"""
-    s = _get_settings()
+    try:
+        s = _get_settings()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     s["gemini_api_key_masked"] = _mask_key(s.get("gemini_api_key", ""))
     s["claude_api_key_masked"] = _mask_key(s.get("claude_api_key", ""))
     s["openai_api_key_masked"] = _mask_key(s.get("openai_api_key", ""))
@@ -160,7 +165,9 @@ async def get_models():
 
 
 class SettingsUpdateRequest(BaseModel):
-    provider: Optional[str] = None
+    provider: Optional[Literal[
+        "gemini", "claude", "openai", "deepseek", "kimi", "openai_compatible"
+    ]] = None
 
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -187,22 +194,25 @@ class SettingsUpdateRequest(BaseModel):
     kimi_expansion_model: Optional[str] = None
     kimi_extraction_model: Optional[str] = None
 
-    local_base_url: Optional[str] = None
+    local_base_url: Optional[str] = Field(None, max_length=2048)
     local_api_key: Optional[str] = None
     local_model: Optional[str] = None
     local_expansion_model: Optional[str] = None
     local_extraction_model: Optional[str] = None
 
-    proxy_url: Optional[str] = None
-    top_k: Optional[int] = None
-    system_prompt_override: Optional[str] = None
-    expansion_prompt_override: Optional[str] = None
+    proxy_url: Optional[str] = Field(None, max_length=2048)
+    top_k: Optional[int] = Field(None, ge=10, le=500)
+    system_prompt_override: Optional[str] = Field(None, max_length=100_000)
+    expansion_prompt_override: Optional[str] = Field(None, max_length=100_000)
 
 
 @router.put("/api/settings")
 async def update_settings(req: SettingsUpdateRequest):
     """保存设置到 settings.json"""
-    current = sm.load_settings(SETTINGS_FILE)
+    try:
+        current = sm.load_settings(SETTINGS_FILE, strict=True)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     merged = {**_DEFAULTS, **current}
 
     update = req.model_dump(exclude_none=True)
@@ -250,15 +260,15 @@ def _resolve_key(provider_prefix: str, request_key: Optional[str]) -> str:
 
 
 class TestConnectionRequest(BaseModel):
-    provider: str
+    provider: Literal["gemini", "claude", "openai", "deepseek", "kimi", "openai_compatible"]
     gemini_api_key: Optional[str] = None
     claude_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
     kimi_api_key: Optional[str] = None
-    local_base_url: Optional[str] = None
+    local_base_url: Optional[str] = Field(None, max_length=2048)
     local_api_key: Optional[str] = None
-    model: Optional[str] = None
+    model: Optional[str] = Field(None, max_length=200)
 
 
 @router.post("/api/settings/test-connection")
@@ -300,9 +310,9 @@ def test_connection(req: TestConnectionRequest):
 # ── 在线拉取模型列表 ─────────────────────────────────────────
 
 class ListModelsRequest(BaseModel):
-    provider: str
+    provider: Literal["gemini", "claude", "openai", "deepseek", "kimi", "openai_compatible"]
     api_key: Optional[str] = None      # 为空时使用已保存的 key
-    base_url: Optional[str] = None     # 仅 openai_compatible 使用
+    base_url: Optional[str] = Field(None, max_length=2048)
 
 # OpenAI /models 会返回大量非对话模型，过滤掉
 _OPENAI_EXCLUDE = (
@@ -317,13 +327,27 @@ def list_models(req: ListModelsRequest):
     p = req.provider
     try:
         if p == "gemini":
-            import google.generativeai as genai
-            genai.configure(api_key=_resolve_key("gemini", req.api_key))
-            models = []
-            for m in genai.list_models():
-                if "generateContent" in (getattr(m, "supported_generation_methods", None) or []):
-                    mid = m.name.replace("models/", "")
-                    models.append({"label": getattr(m, "display_name", "") or mid, "value": mid})
+            from google import genai
+            from google.genai import types
+
+            client_kwargs = {"api_key": _resolve_key("gemini", req.api_key)}
+            proxy_url = _get_settings().get("proxy_url", "")
+            if proxy_url:
+                client_kwargs["http_options"] = types.HttpOptions(
+                    client_args={"proxy": proxy_url},
+                    async_client_args={"proxy": proxy_url},
+                )
+            client = genai.Client(**client_kwargs)
+            try:
+                models = []
+                for m in client.models.list():
+                    if "generateContent" not in (getattr(m, "supported_actions", None) or []):
+                        continue
+                    mid = (m.name or "").removeprefix("models/")
+                    if mid:
+                        models.append({"label": getattr(m, "display_name", "") or mid, "value": mid})
+            finally:
+                client.close()
             models.sort(key=lambda x: x["value"], reverse=True)
             return {"success": True, "models": models}
 

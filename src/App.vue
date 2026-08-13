@@ -1,5 +1,10 @@
 <template>
-  <div class="app-shell">
+  <div
+    v-if="backend.hasConnected"
+    class="app-shell"
+    :aria-hidden="!backend.ready"
+    :inert="!backend.ready"
+  >
     <Sidebar ref="sidebarRef" />
     <main class="main-content">
       <StatusBar />
@@ -22,6 +27,7 @@
       </div>
     </div>
   </div>
+  <StartupScreen v-if="!backend.ready" :return-focus="startupReturnFocus" />
 </template>
 
 <script setup lang="ts">
@@ -29,6 +35,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import StatusBar from '@/components/layout/StatusBar.vue'
+import StartupScreen from '@/components/layout/StartupScreen.vue'
 import { useProjectStore } from '@/stores/project'
 import { useBackendStore } from '@/stores/backend'
 import { useUiStore } from '@/stores/ui'
@@ -38,6 +45,7 @@ const backend = useBackendStore()
 const ui = useUiStore()
 const router = useRouter()
 const sidebarRef = ref<InstanceType<typeof Sidebar> | null>(null)
+const startupReturnFocus = ref<HTMLElement | null>(null)
 
 onMounted(() => {
   // 等后端健康检查通过后再拉项目列表（sidecar 冷启动需 20-40s，
@@ -47,16 +55,29 @@ onMounted(() => {
 })
 
 watch(() => backend.ready, (r) => {
-  if (r) projectStore.fetchProjects()
-})
+  if (r) {
+    projectStore.fetchProjects()
+  } else {
+    // 在 app-shell 变为 inert 之前记住焦点，重连完成后准确返回原控件。
+    const active = document.activeElement
+    startupReturnFocus.value = active instanceof HTMLElement && active.closest('.app-shell')
+      ? active
+      : null
+  }
+}, { flush: 'sync' })
 
 onUnmounted(() => {
+  backend.stop()
   window.removeEventListener('keydown', handleKeydown)
 })
 
 const isMac = /mac/i.test(navigator.userAgent)
 
 function handleKeydown(e: KeyboardEvent) {
+  // 启动/重连层是模态界面。后端未就绪时不能让全局快捷键穿透到
+  // inert 的应用壳（例如离线保存笔记或在后台切换路由）。
+  if (!backend.ready) return
+
   const metaKey = isMac ? e.metaKey : e.ctrlKey
   const key = e.key.toLowerCase()
 

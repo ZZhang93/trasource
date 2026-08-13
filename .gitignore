@@ -40,6 +40,7 @@ __pycache__/
 # Tauri build artifacts & bundled sidecar binaries
 src-tauri/target
 src-tauri/binaries/
+src-tauri/.trasource-dev-mode
 
 # PyInstaller build output (keep trasource-backend.spec — it's the build config)
 build/

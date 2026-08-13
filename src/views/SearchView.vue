@@ -70,7 +70,7 @@
           <div v-if="searchStore.totalFound > 0" class="stats-bar">
             <span v-html="t('searchView.statsHits', { count: searchStore.totalFound.toLocaleString() })"></span>
             <span class="stats-sep">·</span>
-            <span v-html="t('searchView.statsSentToAI', { count: Math.min(searchStore.topK, searchStore.totalFound) })"></span>
+            <span v-html="t('searchView.statsSentToAI', { count: recordsSentToAi })"></span>
             <template v-if="searchStore.contextChars">
               <span class="stats-sep">·</span>
               <span v-html="t('searchView.statsContext', { count: contextKw })"></span>
@@ -94,6 +94,7 @@
             :extract-error="searchStore.extractError"
             :model-name="extractionModelName"
             :source-records="sourceRecords"
+            :context-truncated="searchStore.contextTruncated"
             @open-detail="openDetail"
           />
         </div>
@@ -137,7 +138,7 @@ import RecordsList from '@/components/search/RecordsList.vue'
 import ExtractionPanel from '@/components/search/ExtractionPanel.vue'
 import ChatPanel from '@/components/search/ChatPanel.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const projectStore = useProjectStore()
 const searchStore = useSearchStore()
 const notesStore = useNotesStore()
@@ -152,19 +153,43 @@ const extractionModelName = ref('')
 // ── 请求取消与竞态守卫 ──
 // 新搜索会 abort 旧的流式请求；generation 防止已 abort 的回调写入新状态
 let searchAbort: AbortController | null = null
+let chatAbort: AbortController | null = null
 let generation = 0
+let localSessionId = searchStore.sessionId
 
-onUnmounted(() => searchAbort?.abort())
+onUnmounted(() => {
+  searchAbort?.abort()
+  chatAbort?.abort()
+  // 被取消的请求会因 active() 为 false 而跳过各自 finally；离开页面时
+  // 主动收束瞬态状态，回来后不会永久停在“正在处理”。
+  searchStore.isExpanding = false
+  searchStore.isSearching = false
+  searchStore.isExtracting = false
+  searchStore.isChatStreaming = false
+  streamingReply.value = ''
+})
+
+// Sidebar 的历史恢复也会开启新 session；一旦 session 在组件外变化，立即停掉旧流。
+watch(() => searchStore.sessionId, (id) => {
+  if (id === localSessionId) return
+  searchAbort?.abort()
+  chatAbort?.abort()
+  generation += 1
+  streamingReply.value = ''
+}, { flush: 'sync' })
 
 // 切换项目时自动清空并中断进行中的请求
-watch(() => projectStore.currentProjectName, (n, o) => {
-  if (n !== o && o !== undefined) {
+watch(() => projectStore.currentProjectName, (n) => {
+  if (searchStore.setProject(n || '')) {
     searchAbort?.abort()
-    generation++
-    searchStore.reset()
-    searchHeaderRef.value?.loadAvailableFiles()
+    chatAbort?.abort()
+    generation += 1
+    localSessionId = searchStore.sessionId
+    streamingReply.value = ''
+    detailRecord.value = null
   }
-})
+  if (n) searchHeaderRef.value?.loadAvailableFiles()
+}, { immediate: true })
 
 // 三段流程：与后端实际的 拟词 → 检索 → 摘录 对应
 const pipelineSteps = computed(() => [
@@ -187,21 +212,26 @@ function runExample(q: string) {
 
 const contextKw = computed(() => {
   const n = searchStore.contextChars
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
-  return n.toLocaleString()
+  return new Intl.NumberFormat(locale.value === 'en' ? 'en-US' : 'zh-CN', {
+    notation: n >= 10_000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(n)
 })
 
 const sourceRecords = computed<SearchRecord[]>(() => {
-  const sent = searchStore.records.slice(0, searchStore.topK)
-  const seen = new Set<string>()
-  const result: SearchRecord[] = []
-  for (const rec of sent) {
-    const key = `${rec.source_file}::${rec.date || rec.year || rec.pub_year}`
-    if (!seen.has(key)) { seen.add(key); result.push(rec) }
-    if (result.length >= 20) break
+  if (!searchStore.contextRecordIds.length) {
+    // 兼容旧后端；新版后端返回实际进入 context 的记录 ID。
+    return searchStore.records.slice(0, searchStore.topK)
   }
-  return result
+  const byId = new Map(searchStore.records.map(rec => [String(rec.id), rec]))
+  return searchStore.contextRecordIds
+    .map(id => byId.get(String(id)))
+    .filter((rec): rec is SearchRecord => Boolean(rec))
 })
+
+const recordsSentToAi = computed(() =>
+  searchStore.contextRecordIds.length || Math.min(searchStore.topK, searchStore.totalFound)
+)
 
 function openDetail(rec: SearchRecord) { detailRecord.value = rec }
 
@@ -251,15 +281,24 @@ function createThrottledSink(write: (text: string) => void, intervalMs = 80) {
 // ── 主搜索流程 ──
 async function handleSearch() {
   const query = searchStore.query.trim()
-  if (!query || !projectStore.currentProjectName) return
+  const projectName = projectStore.currentProjectName
+  if (!query || !projectName) return
 
   searchAbort?.abort()
+  chatAbort?.abort()
+  const sessionId = searchStore.beginSession()
+  localSessionId = sessionId
   searchAbort = new AbortController()
   const signal = searchAbort.signal
   const gen = ++generation
-  const active = () => gen === generation
+  const active = () =>
+    gen === generation &&
+    sessionId === searchStore.sessionId &&
+    projectName === projectStore.currentProjectName &&
+    !signal.aborted
 
   searchStore.reset()
+  streamingReply.value = ''
   searchHeaderRef.value?.collapseAdvanced()
 
   // Step 1: AI 扩展
@@ -267,7 +306,7 @@ async function handleSearch() {
   try {
     const expansion = await api.post<any>('/api/search/expand', {
       query, language: searchStore.language,
-      project_name: projectStore.currentProjectName,
+      project_name: projectName,
     }, signal)
     if (!active()) return
     searchStore.expansion = expansion
@@ -289,7 +328,7 @@ async function handleSearch() {
     const fileFilterPayload = searchStore.fileFilter.length > 0 ? [...searchStore.fileFilter] : null
     const result = await api.post<any>('/api/search/execute', {
       query, language: searchStore.language,
-      project_name: projectStore.currentProjectName,
+      project_name: projectName,
       weighted_tokens: searchStore.expansion?.success
         ? Object.entries(searchStore.expansion.terms).map(([t, w]) => [t, w])
         : null,
@@ -303,6 +342,10 @@ async function handleSearch() {
     searchStore.totalFound = result.total_found || 0
     searchStore.searchId = result.search_id || ''
     searchStore.contextChars = result.context_chars || 0
+    searchStore.contextRecordIds = (result.context_record_ids || result.contextRecordIds || [])
+      .map((id: unknown) => Number(id))
+      .filter((id: number) => Number.isFinite(id))
+    searchStore.contextTruncated = Boolean(result.truncated)
     searchStore.hasSearched = true
   } catch (e: any) {
     if (!active()) return
@@ -319,14 +362,16 @@ async function handleSearch() {
   let historyId: number | null = null
   try {
     const entry = await api.post<any>('/api/history', {
-      project_name: projectStore.currentProjectName,
+      project_name: projectName,
       query, language: searchStore.language,
       expansion: searchStore.expansion,
       total_found: searchStore.totalFound,
       ai_output: '',
-    })
-    historyId = entry?.id || null
-    window.dispatchEvent(new CustomEvent('history-updated'))
+    }, signal)
+    if (active()) {
+      historyId = entry?.id || null
+      window.dispatchEvent(new CustomEvent('history-updated'))
+    }
   } catch {}
 
   // Step 3: AI 流式摘录
@@ -334,12 +379,14 @@ async function handleSearch() {
     searchStore.isExtracting = true
     searchStore.aiOutput = ''
     extractionModelName.value = ''
-    const sink = createThrottledSink(text => { searchStore.aiOutput += text })
+    const sink = createThrottledSink(text => {
+      if (active()) searchStore.aiOutput += text
+    })
     try {
       for await (const chunk of api.streamPost('/api/search/extract', {
         query, search_id: searchStore.searchId,
         language: searchStore.language,
-        project_name: projectStore.currentProjectName,
+        project_name: projectName,
       }, signal)) {
         if (!active()) return
         if (chunk.model !== undefined) {
@@ -361,8 +408,8 @@ async function handleSearch() {
         ui.toast(t('searchView.extractionFailed'), 'error')
       }
     } finally {
-      sink.flush()
       if (active()) {
+        sink.flush()
         searchStore.isExtracting = false
         searchStore.extractionDone = true
         // 提取完成后更新历史记录的 ai_output
@@ -370,8 +417,8 @@ async function handleSearch() {
           try {
             await api.patch(`/api/history/${historyId}`, {
               ai_output: searchStore.aiOutput,
-            })
-            window.dispatchEvent(new CustomEvent('history-updated'))
+            }, signal)
+            if (active()) window.dispatchEvent(new CustomEvent('history-updated'))
           } catch {}
         }
       }
@@ -381,21 +428,43 @@ async function handleSearch() {
 
 // ── AI 对话 ──
 async function sendChat(text: string) {
+  if (
+    !searchStore.extractionDone
+    || !searchStore.searchId
+    || searchStore.isSearching
+    || searchStore.isChatStreaming
+  ) return
+  const sessionId = searchStore.sessionId
+  localSessionId = sessionId
+  const projectName = projectStore.currentProjectName
+  const searchId = searchStore.searchId
+  chatAbort?.abort()
+  chatAbort = new AbortController()
+  const signal = chatAbort.signal
+  const active = () =>
+    sessionId === searchStore.sessionId &&
+    projectName === projectStore.currentProjectName &&
+    searchId === searchStore.searchId &&
+    !signal.aborted
+
   searchStore.chatMessages.push({ role: 'user', content: text })
   const messages = searchStore.chatMessages.map(m => ({ role: m.role, content: m.content }))
   searchStore.isChatStreaming = true
   streamingReply.value = ''
   const sink = createThrottledSink(chunk => {
-    streamingReply.value += chunk
-    chatPanelRef.value?.scrollToBottom()
+    if (active()) {
+      streamingReply.value += chunk
+      chatPanelRef.value?.scrollToBottom()
+    }
   })
   let errored = false
   try {
     for await (const chunk of api.streamPost('/api/chat/stream', {
-      messages, search_id: searchStore.searchId,
+      messages, search_id: searchId,
       language: searchStore.language,
-      project_name: projectStore.currentProjectName,
-    })) {
+      project_name: projectName,
+    }, signal)) {
+      if (!active()) return
       if (chunk.text) sink.push(chunk.text)
       if (chunk.error) {
         errored = true
@@ -404,21 +473,26 @@ async function sendChat(text: string) {
       }
       if (chunk.done) break
     }
+    if (!active()) return
     sink.flush()
     if (streamingReply.value) {
       searchStore.chatMessages.push({ role: 'assistant', content: streamingReply.value })
     } else if (errored) {
       searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
     }
-  } catch {
-    sink.flush()
-    searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
-    ui.toast(t('chat.failed'), 'error')
+  } catch (error: any) {
+    if (active() && error?.name !== 'AbortError') {
+      sink.flush()
+      searchStore.chatMessages.push({ role: 'assistant', content: t('chat.failed') })
+      ui.toast(t('chat.failed'), 'error')
+    }
   } finally {
-    searchStore.isChatStreaming = false
-    streamingReply.value = ''
-    await nextTick()
-    chatPanelRef.value?.scrollToBottom()
+    if (active()) {
+      searchStore.isChatStreaming = false
+      streamingReply.value = ''
+      await nextTick()
+      chatPanelRef.value?.scrollToBottom()
+    }
   }
 }
 </script>

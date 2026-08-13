@@ -6,11 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "dialog:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [{ "name": "trasource-backend", "sidecar": true }]
-    },
-    "shell:allow-spawn"
+    "dialog:default"
   ]
 }

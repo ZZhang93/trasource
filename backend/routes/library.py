@@ -9,15 +9,18 @@
 """
 
 import os
-import shutil
 import logging
 from urllib.parse import unquote
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import core.project_manager as pm
 import core.retriever as retriever
 import core.ingest as ingest
+from backend.routes.import_files import (
+    release_filename,
+    reserve_filename,
+)
 
 router = APIRouter()
 logger = logging.getLogger("backend.library")
@@ -25,6 +28,8 @@ logger = logging.getLogger("backend.library")
 # 临时上传目录（使用 cwd，因为 server.py 已将工作目录设为正确位置）
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads_tmp")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 
 # ── 文件上传 ──────────────────────────────────────────────────
@@ -36,27 +41,73 @@ async def upload_file(request: Request, file: UploadFile = File(None)):
     2. application/octet-stream + X-Filename header（Tauri WKWebView 兼容方式）
     """
     content_type = request.headers.get("content-type", "")
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_UPLOAD_BYTES + 1024 * 1024:
+                raise HTTPException(status_code=413, detail="文件超过 500MB 上限")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="无效的 Content-Length")
 
     if "multipart" in content_type and file is not None:
         # 标准 FormData 上传
         filename = file.filename or "upload"
-        dest = _unique_dest(filename)
+        dest, fd = _reserve_unique_dest(filename)
         try:
-            with open(dest, "wb") as f:
-                shutil.copyfileobj(file.file, f)
+            total = 0
+            with os.fdopen(fd, "wb") as f:
+                fd = -1
+                while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                    total += len(chunk)
+                    if total > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="文件超过 500MB 上限")
+                    f.write(chunk)
+        except HTTPException:
+            if fd >= 0:
+                os.close(fd)
+            try:
+                os.unlink(dest)
+            except FileNotFoundError:
+                pass
+            raise
         except Exception as e:
+            if fd >= 0:
+                os.close(fd)
+            try:
+                os.unlink(dest)
+            except FileNotFoundError:
+                pass
             logger.error(f"文件上传失败（multipart）：{e}")
             raise HTTPException(status_code=500, detail=str(e))
     else:
         # 二进制流上传（Tauri 兼容）
         raw_name = request.headers.get("x-filename", "upload")
         filename = unquote(raw_name)
-        dest = _unique_dest(filename)
+        dest, fd = _reserve_unique_dest(filename)
         try:
-            body = await request.body()
-            with open(dest, "wb") as f:
-                f.write(body)
+            total = 0
+            with os.fdopen(fd, "wb") as f:
+                fd = -1
+                async for chunk in request.stream():
+                    total += len(chunk)
+                    if total > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="文件超过 500MB 上限")
+                    f.write(chunk)
+        except HTTPException:
+            if fd >= 0:
+                os.close(fd)
+            try:
+                os.unlink(dest)
+            except FileNotFoundError:
+                pass
+            raise
         except Exception as e:
+            if fd >= 0:
+                os.close(fd)
+            try:
+                os.unlink(dest)
+            except FileNotFoundError:
+                pass
             logger.error(f"文件上传失败（binary）：{e}")
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -73,16 +124,19 @@ def _sanitize_filename(filename: str) -> str:
     return name
 
 
-def _unique_dest(filename: str) -> str:
-    """生成不重复的目标路径（filename 先消毒，保证结果一定落在 UPLOAD_DIR 内）。"""
+def _reserve_unique_dest(filename: str) -> tuple[str, int]:
+    """原子占用一个不重复的目标路径，避免并发上传互删文件。"""
     filename = _sanitize_filename(filename)
-    dest = os.path.join(UPLOAD_DIR, filename)
     base, ext = os.path.splitext(filename)
-    counter = 1
-    while os.path.exists(dest):
-        dest = os.path.join(UPLOAD_DIR, f"{base}_{counter}{ext}")
-        counter += 1
-    return dest
+    counter = 0
+    while True:
+        candidate = filename if counter == 0 else f"{base}_{counter}{ext}"
+        dest = os.path.join(UPLOAD_DIR, candidate)
+        try:
+            fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            return dest, fd
+        except FileExistsError:
+            counter += 1
 
 
 # ── 共享库统计 ────────────────────────────────────────────────
@@ -107,6 +161,12 @@ def project_stats(project_name: str):
     if project_name == "_shared":
         return shared_stats()
 
+    try:
+        pm.validate_project_name(project_name, allow_shared=False)
+        pm.get_project_meta(project_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     project_files = pm.get_project_shared_files(project_name)
     if not project_files:
         return {"files": [], "total": 0}
@@ -116,35 +176,70 @@ def project_stats(project_name: str):
     if os.path.exists(shared_db):
         try:
             total = ingest.get_records_count_for_files(shared_db, project_files)
-        except Exception:
-            pass
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"读取共享库统计失败：{e}")
     return {"files": project_files, "total": total}
 
 
 # ── 项目文件引用管理 ──────────────────────────────────────────
 
 class AddFileRequest(BaseModel):
-    filename: str
+    filename: str = Field(..., min_length=1, max_length=1024)
 
 
 @router.post("/api/projects/{project_name}/add-file")
 async def add_file_to_project(project_name: str, req: AddFileRequest):
     """将共享库文件加入项目引用列表（不复制数据）"""
-    current = pm.get_project_shared_files(project_name)
-    if req.filename not in current:
-        current.append(req.filename)
-        pm.set_project_shared_files(project_name, current)
-    return {"project": project_name, "files": current}
+    try:
+        pm.validate_project_name(project_name, allow_shared=False)
+        project_meta = pm.get_project_meta(project_name)
+        operation = "reference:add"
+        if not reserve_filename(req.filename, operation):
+            raise HTTPException(status_code=409, detail="文件正在处理，请稍后重试")
+        try:
+            db = pm.get_shared_db_path()
+            if not os.path.exists(db) or req.filename not in retriever.get_all_source_files(db):
+                raise HTTPException(status_code=404, detail="共享库中不存在该文件")
+            current = pm.add_project_shared_file(
+                project_name,
+                req.filename,
+                expected_project_id=project_meta["project_id"],
+            )
+            return {"project": project_name, "files": current}
+        finally:
+            release_filename(req.filename, operation)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存项目文件引用失败：{e}")
 
 
 @router.delete("/api/projects/{project_name}/file/{filename:path}")
 async def remove_file_from_project(project_name: str, filename: str):
     """从项目引用列表中移除文件（不删除共享库数据）"""
-    current = pm.get_project_shared_files(project_name)
-    if filename in current:
-        current = [f for f in current if f != filename]
-        pm.set_project_shared_files(project_name, current)
-    return {"project": project_name, "files": current}
+    try:
+        pm.validate_project_name(project_name, allow_shared=False)
+        project_meta = pm.get_project_meta(project_name)
+        operation = "reference:remove"
+        if not reserve_filename(filename, operation):
+            raise HTTPException(status_code=409, detail="文件正在处理，请稍后重试")
+        try:
+            current = pm.remove_project_shared_file(
+                project_name,
+                filename,
+                expected_project_id=project_meta["project_id"],
+            )
+            return {"project": project_name, "files": current}
+        finally:
+            release_filename(filename, operation)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存项目文件引用失败：{e}")
 
 
 # ── 共享库文件删除 ────────────────────────────────────────────
@@ -162,26 +257,64 @@ async def get_file_usage(filename: str):
 @router.delete("/api/library/files/_shared/{filename:path}")
 def delete_shared_file(filename: str):
     """从共享库删除文件，并自动清除所有项目中的引用"""
-    db = pm.get_shared_db_path()
-    if not os.path.exists(db):
-        raise HTTPException(status_code=404, detail="共享库不存在")
-
-    # 找出引用了此文件的项目，用于返回信息
-    projects_using = []
-    for proj in pm.list_projects():
-        if filename in pm.get_project_shared_files(proj["name"]):
-            projects_using.append(proj["name"])
-
-    # 从共享库 DuckDB 删除
+    # Import owns this source name until both DuckDB rows and the project
+    # reference are committed. Deleting in the middle could otherwise leave a
+    # dangling reference or report success while the task later reappears.
+    if not reserve_filename(filename, "delete"):
+        raise HTTPException(status_code=409, detail="文件正在处理，暂时不能删除")
     try:
-        count = ingest.delete_source_file(db, filename)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        db = pm.get_shared_db_path()
+        if not os.path.exists(db):
+            raise HTTPException(status_code=404, detail="共享库不存在")
 
-    # 清除各项目的引用
-    for proj_name in projects_using:
-        current = pm.get_project_shared_files(proj_name)
-        pm.set_project_shared_files(proj_name, [f for f in current if f != filename])
+        project_names = [proj["name"] for proj in pm.list_projects()]
+        # Keep each affected project's lifecycle lock from snapshot through DB
+        # commit/rollback. Otherwise a full-list PUT that starts after our
+        # temporary reference removal can return success and then be changed by
+        # the rollback of a failed delete.
+        with pm.lock_projects(project_names):
+            project_snapshots = {}
+            for proj_name in project_names:
+                try:
+                    meta = pm.get_project_meta(proj_name)
+                except ValueError:
+                    # The project may have been deleted since list_projects().
+                    continue
+                files = meta.get("shared_files", [])
+                if filename in files:
+                    project_snapshots[proj_name] = meta["project_id"]
+            projects_using = list(project_snapshots)
+
+            # 先清理引用，再删除 DuckDB 数据。如果任一元数据写入失败，
+            # 原文数据仍在，并尽力回滚已修改的项目引用。
+            updated_projects = []
+            try:
+                for proj_name, project_id in project_snapshots.items():
+                    pm.remove_project_shared_file(
+                        proj_name,
+                        filename,
+                        expected_project_id=project_id,
+                    )
+                    updated_projects.append((proj_name, project_id))
+                count = ingest.delete_source_file(db, filename)
+            except Exception as e:
+                # Roll back only the single reference removed by this operation.
+                # Restoring an entire stale snapshot would erase unrelated references
+                # that another request successfully wrote in the meantime.
+                for proj_name, project_id in reversed(updated_projects):
+                    try:
+                        pm.add_project_shared_file(
+                            proj_name,
+                            filename,
+                            expected_project_id=project_id,
+                        )
+                    except pm.ProjectIdentityMismatchError:
+                        continue
+                    except Exception as rollback_error:
+                        logger.error(f"回滚项目 [{proj_name}] 的文件引用失败：{rollback_error}")
+                raise HTTPException(status_code=500, detail=f"删除共享文件失败：{e}")
+    finally:
+        release_filename(filename, "delete")
 
     logger.info(f"已从共享库删除文件 [{filename}]，影响项目：{projects_using}")
     return {
@@ -189,5 +322,3 @@ def delete_shared_file(filename: str):
         "filename": filename,
         "cleaned_projects": projects_using,
     }
-
-

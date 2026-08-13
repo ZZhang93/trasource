@@ -8,19 +8,60 @@ import time
 import uuid
 import logging
 import asyncio
-from typing import Optional
+import threading
+from typing import Optional, Literal
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import core.project_manager as pm
 import core.ingest as ingest
 
 router = APIRouter()
 logger = logging.getLogger("backend.import")
+UPLOAD_DIR = os.path.realpath(os.path.join(os.getcwd(), "uploads_tmp"))
 
 # 存放进行中任务的内存字典  { task_id: { status, progress, message, error, finished_at } }
 _tasks: dict = {}
+_active_filenames: dict[str, str] = {}
+_active_filenames_lock = threading.Lock()
+
+
+def is_filename_importing(filename: str) -> bool:
+    with _active_filenames_lock:
+        return _active_filenames.get(filename) == "import"
+
+
+def reserve_filenames(filenames, operation: str) -> bool:
+    """Atomically reserve every source name for one operation.
+
+    Batch reservation is needed by the project ``shared-files`` PUT endpoint:
+    reserving names one-by-one would expose a partial acquisition window and
+    would require error-prone rollback when one of the later names is busy.
+    """
+    unique_filenames = list(dict.fromkeys(filenames))
+    with _active_filenames_lock:
+        if any(filename in _active_filenames for filename in unique_filenames):
+            return False
+        for filename in unique_filenames:
+            _active_filenames[filename] = operation
+        return True
+
+
+def release_filenames(filenames, operation: str):
+    with _active_filenames_lock:
+        for filename in dict.fromkeys(filenames):
+            if _active_filenames.get(filename) == operation:
+                _active_filenames.pop(filename, None)
+
+
+def reserve_filename(filename: str, operation: str) -> bool:
+    """Atomically reserve a source name across import/delete workflows."""
+    return reserve_filenames([filename], operation)
+
+
+def release_filename(filename: str, operation: str):
+    release_filenames([filename], operation)
 
 
 def _purge_finished_tasks(max_age_seconds: float = 600):
@@ -36,21 +77,39 @@ def _purge_finished_tasks(max_age_seconds: float = 600):
 
 
 class ImportStartRequest(BaseModel):
-    project_name: str
-    file_path: str                  # 服务器可访问的绝对路径
+    project_name: str = Field(..., min_length=1, max_length=255)
+    file_path: str = Field(..., min_length=1, max_length=4096)
     # 学术元数据（书籍/论文/访谈时填写）
-    doc_type: str = "newspaper"     # newspaper / book / paper / interview
-    title: Optional[str] = None
-    author: Optional[str] = None
-    pub_year: Optional[str] = None
-    publisher: Optional[str] = None
-    interviewee: Optional[str] = None
-    interview_date: Optional[str] = None
-    interview_location: Optional[str] = None
+    doc_type: Literal["newspaper", "book", "paper", "interview"] = "newspaper"
+    title: Optional[str] = Field(None, max_length=1000)
+    author: Optional[str] = Field(None, max_length=1000)
+    pub_year: Optional[str] = Field(None, max_length=100)
+    publisher: Optional[str] = Field(None, max_length=1000)
+    interviewee: Optional[str] = Field(None, max_length=1000)
+    interview_date: Optional[str] = Field(None, max_length=100)
+    interview_location: Optional[str] = Field(None, max_length=1000)
 
 
-ALLOWED_EXTENSIONS = {".csv", ".pdf", ".docx", ".doc", ".txt", ".epub", ".mobi", ".azw3"}
+ALLOWED_EXTENSIONS = {".csv", ".pdf", ".docx", ".txt", ".epub", ".mobi", ".azw3"}
 MAX_FILE_SIZE_MB = 500
+
+
+def _cleanup_staged_upload(filepath: str):
+    real_path = os.path.realpath(filepath)
+    try:
+        is_staged_upload = (
+            os.path.commonpath([UPLOAD_DIR, real_path]) == UPLOAD_DIR
+            and real_path != UPLOAD_DIR
+        )
+    except ValueError:
+        is_staged_upload = False
+    if is_staged_upload:
+        try:
+            os.unlink(real_path)
+        except FileNotFoundError:
+            pass
+        except OSError as cleanup_error:
+            logger.warning(f"清理上传临时文件失败：{cleanup_error}")
 
 
 @router.post("/api/import/start")
@@ -59,45 +118,70 @@ async def start_import(req: ImportStartRequest):
     启动导入任务，返回 task_id。
     调用方随后 GET /api/import/{task_id}/progress 获取 SSE 进度。
     """
+    try:
+        pm.validate_project_name(req.project_name, allow_shared=False)
+        project_meta = pm.get_project_meta(req.project_name)
+    except ValueError as e:
+        _cleanup_staged_upload(req.file_path)
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not os.path.isfile(req.file_path):
         raise HTTPException(status_code=400, detail=f"文件不存在：{req.file_path}")
 
     # 文件扩展名校验
     ext = os.path.splitext(req.file_path)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
+        _cleanup_staged_upload(req.file_path)
         raise HTTPException(status_code=400, detail=f"不支持的文件格式：{ext}（支持：{', '.join(sorted(ALLOWED_EXTENSIONS))}）")
 
     # 文件大小校验
     size_mb = os.path.getsize(req.file_path) / (1024 * 1024)
     if size_mb > MAX_FILE_SIZE_MB:
+        _cleanup_staged_upload(req.file_path)
         raise HTTPException(status_code=400, detail=f"文件过大：{size_mb:.0f}MB（最大 {MAX_FILE_SIZE_MB}MB）")
 
     # 所有文件统一导入到共享库（新架构：项目只保存引用）
     pm.ensure_shared_project()
     db_path = pm.get_shared_db_path()
     project_name = req.project_name  # 记录来源项目，用于导入后自动添加引用
+    project_id = project_meta["project_id"]
 
     # 初始化数据库（如果不存在）
     try:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         ingest.init_database(db_path)
     except Exception as e:
+        _cleanup_staged_upload(req.file_path)
         raise HTTPException(status_code=500, detail=f"数据库初始化失败：{e}")
 
-    # 检查重复导入
+    # 原子占用来源名之后再做重复检查；这样 delete/import 以及两个并发
+    # import 不会在 check→write 窗口里互相穿透。
     filename = os.path.basename(req.file_path)
-    if ingest.check_file_already_imported(db_path, filename):
-        raise HTTPException(status_code=409, detail=f"文件已导入：{filename}")
+    if not reserve_filename(filename, "import"):
+        _cleanup_staged_upload(req.file_path)
+        raise HTTPException(status_code=409, detail=f"文件正在处理：{filename}")
 
-    _purge_finished_tasks()
-    task_id = str(uuid.uuid4())
-    _tasks[task_id] = {
-        "status": "pending",
-        "progress": 0.0,
-        "message": "等待开始…",
-        "imported": 0,
-        "error": None,
-    }
+    try:
+        if ingest.check_file_already_imported(db_path, filename):
+            _cleanup_staged_upload(req.file_path)
+            raise HTTPException(status_code=409, detail=f"文件已导入：{filename}")
+    except Exception:
+        release_filename(filename, "import")
+        raise
+
+    try:
+        _purge_finished_tasks()
+        task_id = str(uuid.uuid4())
+        _tasks[task_id] = {
+            "status": "pending",
+            "progress": 0.0,
+            "message": "等待开始…",
+            "imported": 0,
+            "error": None,
+        }
+    except Exception:
+        release_filename(filename, "import")
+        raise
 
     meta = {
         "doc_type":           req.doc_type,
@@ -112,14 +196,17 @@ async def start_import(req: ImportStartRequest):
 
     # 后台异步执行导入
     asyncio.create_task(
-        _run_import(task_id, db_path, req.file_path, filename, meta, project_name)
+        _run_import(
+            task_id, db_path, req.file_path, filename, meta, project_name, project_id
+        )
     )
 
     return {"task_id": task_id}
 
 
 async def _run_import(task_id: str, db_path: str, filepath: str,
-                      filename: str, meta: dict, project_name: str):
+                      filename: str, meta: dict, project_name: str,
+                      project_id: str):
     """异步包装同步导入函数，通过回调更新进度。"""
     task = _tasks[task_id]
     task["status"] = "running"
@@ -142,7 +229,7 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             result = await loop.run_in_executor(
                 None, lambda: ingest.ingest_pdf(db_path, filepath, meta, progress_cb)
             )
-        elif ext in (".docx", ".doc"):
+        elif ext == ".docx":
             result = await loop.run_in_executor(
                 None, lambda: ingest.ingest_docx(db_path, filepath, meta, progress_cb)
             )
@@ -162,6 +249,24 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             raise ValueError(f"不支持的文件格式：{ext}")
 
         total = result.get("total_imported", 0)
+        if total <= 0:
+            raise ValueError("文件中没有可导入的有效正文记录，请检查文件内容和列名。")
+
+        # 自动将文件引用加入来源项目（新架构：项目只保存引用）
+        if project_name and project_name != pm.SHARED_PROJECT:
+            try:
+                pm.add_project_shared_file(
+                    project_name,
+                    filename,
+                    expected_project_id=project_id,
+                )
+            except Exception:
+                # Do not leave an unreachable document in the shared DB if
+                # persisting its project reference fails.
+                ingest.delete_source_file(db_path, filename)
+                raise
+            logger.info(f"已自动将 [{filename}] 添加到项目 [{project_name}] 的引用列表")
+
         task.update({
             "status": "done",
             "progress": 100.0,
@@ -169,17 +274,6 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             "message": f"导入完成：{total:,} 条记录",
             "finished_at": time.time(),
         })
-
-        # 自动将文件引用加入来源项目（新架构：项目只保存引用）
-        if project_name and project_name != pm.SHARED_PROJECT:
-            try:
-                current_refs = pm.get_project_shared_files(project_name)
-                if filename not in current_refs:
-                    current_refs.append(filename)
-                    pm.set_project_shared_files(project_name, current_refs)
-                    logger.info(f"已自动将 [{filename}] 添加到项目 [{project_name}] 的引用列表")
-            except Exception as e:
-                logger.warning(f"自动添加项目引用失败: {e}")
 
         logger.info(f"导入完成：{filename}，{total} 条，项目={project_name}")
 
@@ -191,6 +285,12 @@ async def _run_import(task_id: str, db_path: str, filepath: str,
             "message": f"导入失败：{e}",
             "finished_at": time.time(),
         })
+    finally:
+        release_filename(filename, "import")
+        # Browser uploads are staging files.  Delete only files canonically
+        # contained by uploads_tmp; native Tauri selections point at user files
+        # elsewhere and must never be removed.
+        _cleanup_staged_upload(filepath)
 
 
 @router.get("/api/import/{task_id}/progress")

@@ -57,23 +57,25 @@ User Query: "How did People's Daily report on the Hundred Days No Children campa
 
 ## Prerequisites
 
-- **Node.js** 18+
+- **Node.js** 22+
 - **Rust** toolchain ([rustup.rs](https://rustup.rs/))
-- **Python** 3.10+
+- **Python** 3.11+
 - At least one AI API key (Gemini / Claude / OpenAI) or a local model server
 
 ## Getting Started
 
 ```bash
 # Clone
-git clone https://github.com/YOUR_USERNAME/trasource.git
+git clone https://github.com/ZZhang93/trasource.git
 cd trasource
 
 # Install frontend dependencies
-npm install
+npm ci
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Create an isolated Python environment and install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.lock
 
 # Configure your API key (choose one method)
 # Method 1: Create .env file
@@ -82,27 +84,53 @@ cp .env.example .env
 
 # Method 2: Configure via the app's Settings UI after launch
 
-# Start development server
+# Start the desktop app. Tauri starts exactly one Python backend and the UI
+# displays a startup screen while the sidecar is becoming ready.
 ./start.sh
-# Or manually:
-# Terminal 1: python -m uvicorn backend.server:app --host 127.0.0.1 --port 8765
-# Terminal 2: npm run tauri dev
+
+# For browser-only frontend development, run these in separate terminals:
+# python3 -m uvicorn backend.server:app --host 127.0.0.1 --port 8765
+# npm run dev
 ```
+
+On Windows, activate the environment with `.venv\Scripts\activate` and run
+`npm run desktop:dev` instead of `./start.sh`.
+
+### First Run
+
+1. Keep the app open while the startup screen prepares the local backend. A packaged first launch can take 20–40 seconds.
+2. Create a project from the sidebar.
+3. Open **Settings**, choose an AI provider, add its API key, and test the connection.
+4. Import documents into the project. CSV files must include a `文本内容` (or `content`) column.
+5. Enter a research question. Finished AI excerpts appear as separate source cards; choose **View full original** to inspect the underlying record.
 
 ## Building
 
 ```bash
-# Build the Python sidecar
-pip install pyinstaller
-python -m PyInstaller trasource-backend.spec --clean --noconfirm
+# Install runtime dependencies and the pinned release packager
+python3 -m pip install -r requirements-build.txt
 
-# Copy sidecar to Tauri binaries
-cp dist/trasource-backend src-tauri/binaries/trasource-backend-$(rustc -vV | grep host | awk '{print $2}')
+# Windows/Linux: build the frontend, target-specific sidecar, and bundle
+npm run desktop:build
 
-# Build the app
-npm run tauri build
+# macOS local distribution without a Developer ID certificate
+APPLE_SIGNING_IDENTITY=- npm run desktop:build
+
+# For a public macOS release, set APPLE_SIGNING_IDENTITY to a Developer ID
+# Application identity and configure Apple notarization credentials instead.
 
 # Output: src-tauri/target/release/bundle/
+```
+
+## Quality Checks
+
+```bash
+# Frontend build/type checks, translations, versions, and regression tests
+npm run check
+
+# Rust desktop shell (the first command prepares clean-clone sidecar metadata)
+npm run prepare:sidecar:dev
+(cd src-tauri && cargo check --locked)
 ```
 
 ## Supported Document Formats
@@ -110,21 +138,33 @@ npm run tauri build
 | Format | Type | Notes |
 |--------|------|-------|
 | CSV | Newspapers | Auto-parses date, page, title, content columns |
-| PDF | Books, papers | Text extraction via pdfplumber |
+| PDF | Books, papers | Text extraction via pypdf; scanned PDFs require OCR first |
 | DOCX | Books, papers | Paragraph-level chunking |
 | TXT | Any | Plain text import |
 | EPUB | Books | Chapter-aware extraction |
-| MOBI/AZW3 | Books | Kindle format support |
+| MOBI/AZW3 | Books | Requires Calibre's `ebook-convert` command |
 
 ## Configuration
 
 All configuration is done through the **Settings** UI within the app:
 
 - **AI Provider** — Select Gemini, Claude, ChatGPT, or local model
-- **API Keys** — Stored locally in `settings.json`, never uploaded
+- **API Keys** — Stored locally in `settings.json`; they are sent only to the selected AI provider when making API requests
 - **Model Selection** — Choose models for keyword analysis and document extraction independently
 - **Custom Prompts** — Override the AI prompts for query expansion and extraction
 - **Local Models** — Connect to Ollama, vLLM, or any OpenAI-compatible API
+
+## Data and Backups
+
+Packaged builds keep all projects, notes, settings, and databases in the platform's per-user data directory:
+
+| Platform | Data directory |
+|----------|----------------|
+| macOS | `~/Library/Application Support/trasource` |
+| Windows | `%LOCALAPPDATA%\trasource` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/trasource` |
+
+Close the app before backing up or restoring this directory so DuckDB and SQLite files are copied consistently. Development mode stores runtime data in the repository root.
 
 ## Project Structure
 
@@ -146,13 +186,17 @@ trasource/
 │   ├── db.py               # SQLite connection manager
 │   └── ...
 ├── src-tauri/              # Tauri (Rust) desktop shell
-└── requirements.txt        # Python dependencies
+├── requirements.txt        # Direct Python dependency ranges
+└── requirements.lock       # Reproducible resolved Python environment
 ```
 
 ## License
 
-MIT
+The repository's [LICENSE](LICENSE) file is the authoritative license text (GNU AGPL v3).
 
 ## Contributing
 
-Contributions are welcome. Please open an issue first to discuss what you would like to change.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local
+quality checks and pull-request expectations. Notable changes are tracked in
+[CHANGELOG.md](CHANGELOG.md). Please report vulnerabilities using the private
+process in [SECURITY.md](SECURITY.md).

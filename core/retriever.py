@@ -8,6 +8,7 @@
 import re as _re
 import logging
 import os
+import math
 import duckdb
 import jieba
 from config import MAX_SEARCH_RESULTS, MAX_CONTEXT_CHARS, TOP_K_FOR_LLM, TOP_K_PER_SOURCE
@@ -83,22 +84,32 @@ def build_weighted_search_sql(
         return "", []
 
     conditions = []
-    params = []
+    where_params = []
     score_parts = []
+    score_params = []
 
     for token, word_weight in weighted_tokens:
-        like_pattern = f"%{token}%"
+        # Treat AI/user terms as literal substrings, not SQL LIKE patterns.
+        escaped_token = str(token).replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        like_pattern = f"%{escaped_token}%"
         conditions.append(
-            "(title LIKE ? OR content LIKE ? OR chapter LIKE ? OR author LIKE ?)"
+            "(title ILIKE ? ESCAPE '!' OR content ILIKE ? ESCAPE '!' "
+            "OR chapter ILIKE ? ESCAPE '!' OR author ILIKE ? ESCAPE '!')"
         )
-        params.extend([like_pattern, like_pattern, like_pattern, like_pattern])
+        where_params.extend([like_pattern, like_pattern, like_pattern, like_pattern])
 
+        # The score expression appears in SELECT, before the WHERE placeholders
+        # in SQL text.  Keep its parameters separate so the final flattened
+        # parameter list follows SQL placeholder order exactly.
+        weight = float(word_weight)
+        if not math.isfinite(weight) or weight < 0:
+            raise ValueError("检索词权重必须是非负有限数")
         score_parts.append(
-            f"(CASE WHEN title   LIKE ? THEN {word_weight * 3} ELSE 0 END"
-            f" + CASE WHEN chapter LIKE ? THEN {word_weight * 2} ELSE 0 END"
-            f" + CASE WHEN content LIKE ? THEN {word_weight * 1} ELSE 0 END)"
+            f"(CASE WHEN title ILIKE ? ESCAPE '!' THEN {weight * 3:g} ELSE 0 END"
+            f" + CASE WHEN chapter ILIKE ? ESCAPE '!' THEN {weight * 2:g} ELSE 0 END"
+            f" + CASE WHEN content ILIKE ? ESCAPE '!' THEN {weight:g} ELSE 0 END)"
         )
-        params.extend([like_pattern, like_pattern, like_pattern])
+        score_params.extend([like_pattern, like_pattern, like_pattern])
 
     where_clause = " OR ".join(conditions)
     score_expr   = " + ".join(score_parts)
@@ -107,6 +118,7 @@ def build_weighted_search_sql(
     # 按字段优先级取值：date > year > pub_year。
     # 不能用 OR（记录同时有 date 和 year 时，宽松的 year 条件会吞掉精确的 date 过滤）。
     extra_conditions = []
+    extra_params = []
     _date_case = (
         "CASE WHEN NULLIF(date,'') IS NOT NULL THEN date {op} ? "
         "WHEN NULLIF(year,'') IS NOT NULL THEN year {op} ? "
@@ -115,22 +127,27 @@ def build_weighted_search_sql(
     )
     if date_from:
         extra_conditions.append("(" + _date_case.format(op=">=") + ")")
-        params.extend([date_from, date_from[:4], date_from[:4]])
+        extra_params.extend([date_from, date_from[:4], date_from[:4]])
     if date_to:
         extra_conditions.append("(" + _date_case.format(op="<=") + ")")
-        params.extend([date_to, date_to[:4], date_to[:4]])
+        extra_params.extend([date_to, date_to[:4], date_to[:4]])
 
     # ── 参数化文件筛选 ──
     if file_filter:
         placeholders = ", ".join(["?" for _ in file_filter])
         extra_conditions.append(f"source_file IN ({placeholders})")
-        params.extend(file_filter)
+        extra_params.extend(file_filter)
 
     # ── 参数化项目白名单 ──
-    if allowed_files:
-        placeholders = ", ".join(["?" for _ in allowed_files])
-        extra_conditions.append(f"source_file IN ({placeholders})")
-        params.extend(allowed_files)
+    # None means the caller explicitly wants the entire database.  An empty
+    # list means the project has no linked files and therefore must match none.
+    if allowed_files is not None:
+        if allowed_files:
+            placeholders = ", ".join(["?" for _ in allowed_files])
+            extra_conditions.append(f"source_file IN ({placeholders})")
+            extra_params.extend(allowed_files)
+        else:
+            extra_conditions.append("FALSE")
 
     # 组装 WHERE
     all_where_parts = [f"({where_clause})"]
@@ -151,7 +168,7 @@ def build_weighted_search_sql(
         ORDER BY relevance_score DESC
         LIMIT {MAX_SEARCH_RESULTS}
     """
-    return sql, params
+    return sql, score_params + where_params + extra_params
 
 
 def format_citation(rec: dict) -> str:
@@ -221,14 +238,20 @@ def _apply_diversity(records: list, k: int, min_per_source: int) -> list:
 
 def _run_search_raw(db_path: str, sql: str, params: list) -> list:
     """在指定 DB 上执行搜索 SQL，返回 records 列表。"""
+    conn = None
     try:
-        conn = duckdb.connect(db_path, read_only=True)
+        # Keep connection configuration consistent with concurrent import
+        # writers. DuckDB rejects mixed read_only/read_write connections to the
+        # same file within one process.
+        conn = duckdb.connect(db_path)
         rows = conn.execute(sql, params).fetchall()
-        conn.close()
         return [dict(zip(_RECORD_COLS, row)) for row in rows]
     except Exception as e:
         logger.error(f"检索失败 ({db_path}): {e}", exc_info=True)
-        return []
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def search(
@@ -260,7 +283,16 @@ def search(
         return {
             "records": [], "total_found": 0,
             "context": "", "context_chars": 0,
+            "context_record_ids": [],
             "truncated": False, "tokens": [],
+        }
+
+    if allowed_files == []:
+        return {
+            "records": [], "total_found": 0,
+            "context": "", "context_chars": 0,
+            "context_record_ids": [],
+            "truncated": False, "tokens": tokens_display,
         }
 
     sql, params = build_weighted_search_sql(
@@ -279,12 +311,13 @@ def search(
 
     # 按记录边界累积 context，超限时丢弃后续整条记录（不把史料拦腰砍断）
     context_parts = []
+    context_record_ids = []
     context_chars = 0
     truncated     = False
     for r in records_for_llm:
         citation = format_citation(r)
         part = (
-            f"【文献信息】{citation}\n"
+            f"【文献信息】【记录ID：{r['id']}】{citation}\n"
             f"【内容】{r.get('content','')}\n"
             f"{'─' * 60}"
         )
@@ -293,6 +326,7 @@ def search(
             logger.warning(f"Context 超限，保留前 {len(context_parts)} 条记录")
             break
         context_parts.append(part)
+        context_record_ids.append(r["id"])
         context_chars += len(part) + 2
 
     full_context = "\n\n".join(context_parts)
@@ -303,6 +337,7 @@ def search(
         "total_found":   total_found,
         "context":       full_context,
         "context_chars": context_chars,
+        "context_record_ids": context_record_ids,
         "truncated":     truncated,
         "tokens":        tokens_display,
     }
@@ -318,7 +353,7 @@ def get_db_context_summary(db_path: str) -> str:
         cached = _summary_cache.get(db_path)
         if cached and cached[0] == mtime:
             return cached[1]
-        conn = duckdb.connect(db_path, read_only=True)
+        conn = duckdb.connect(db_path)
         type_rows = conn.execute(
             "SELECT doc_type, COUNT(*) AS n FROM documents GROUP BY doc_type ORDER BY n DESC"
         ).fetchall()
@@ -346,7 +381,7 @@ def get_db_context_summary(db_path: str) -> str:
 
 def get_record_by_id(db_path: str, record_id: int) -> dict | None:
     """按 id 取单条完整记录（记录列表只带预览，详情弹窗用此接口取全文）。"""
-    conn = duckdb.connect(db_path, read_only=True)
+    conn = duckdb.connect(db_path)
     row = conn.execute(
         f"SELECT {', '.join(c for c in _RECORD_COLS if c != 'relevance_score')} "
         "FROM documents WHERE id = ?", [record_id]
@@ -360,7 +395,7 @@ def get_record_by_id(db_path: str, record_id: int) -> dict | None:
 
 
 def get_all_source_files(db_path: str) -> list:
-    conn = duckdb.connect(db_path, read_only=True)
+    conn = duckdb.connect(db_path)
     rows = conn.execute(
         "SELECT DISTINCT source_file FROM documents ORDER BY source_file"
     ).fetchall()

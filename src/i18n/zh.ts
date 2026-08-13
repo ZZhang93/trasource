@@ -11,6 +11,23 @@ export default {
   'common.clear': '清空',
   'common.ok': '确定',
 
+  // ── 启动 ─────────────────────────────────────────────
+  'startup.eyebrow': '本地研究工作台',
+  'startup.title': '正在准备问渠',
+  'startup.description': '正在启动本地检索与文献服务。首次启动需要加载运行环境，请稍候。',
+  'startup.firstStartHint': '首次启动通常约需 20–40 秒；后续启动通常会更快。',
+  'startup.reconnectingTitle': '正在恢复本地服务',
+  'startup.reconnectingDescription': '与本地后端的连接暂时中断。你的当前页面与研究内容会保留，连接恢复后将自动继续。',
+  'startup.stagePreparing': '准备启动…',
+  'startup.stageLaunching': '启动本地服务…',
+  'startup.stageChecking': '检查服务状态 · 第 {attempt} 次',
+  'startup.stageReconnecting': '尝试重新连接 · 第 {attempt} 次',
+  'startup.elapsed': '已等待 {seconds} 秒',
+  'startup.failedTitle': '本地服务未能启动',
+  'startup.failedHint': '请确认没有其他程序占用服务端口，然后重试；若问题持续，请重启应用。',
+  'startup.retry': '重新尝试',
+  'startup.localNote': '所有文献与设置均保存在本机',
+
   // ── Sidebar ─────────────────────────────────────────
   'sidebar.appName': '问渠·trasource',
   'sidebar.search': '检索',
@@ -71,10 +88,15 @@ export default {
   'settings.deepseekApiKey': 'DeepSeek API Key',
   'settings.kimiApiKey': 'Kimi API Key',
   'settings.openaiApiKey': 'OpenAI API Key',
-  'settings.apiKeyHint': 'API Key 仅存储在本地，不会上传到任何服务器',
-  'settings.apiKeyLocalHint': 'API Key 仅存储在本地',
+  'settings.apiKeyHint': 'API Key 存储在本机，仅在请求所选 AI 服务时发送给对应提供商',
+  'settings.apiKeyLocalHint': 'API Key 存储在本机，仅在请求所选 AI 服务时使用',
   'settings.showKey': '显示',
   'settings.hideKey': '隐藏',
+  'settings.keyConfiguredAs': '已配置：{key}',
+  'settings.keyReadyToSave': '新 Key 将在保存后生效',
+  'settings.keyNotConfigured': '尚未配置 API Key',
+  'settings.keyClearPending': '保存后将清除 API Key',
+  'settings.clearKey': '清除 Key',
 
   // Models
   'settings.expansionModelLabel': 'AI 关键词分析模型',
@@ -119,13 +141,21 @@ export default {
   'settings.aboutDatabase': '数据库',
   'settings.aboutAIModel': 'AI 模型',
   'settings.aboutAIModelValue': 'Gemini / Claude / ChatGPT / 本地模型',
+  'settings.aboutLicense': '开源许可证',
+  'settings.viewSource': '查看源代码',
+  'settings.viewLicense': '查看许可证',
+  'settings.openLinkFailed': '无法打开外部链接',
 
   // Language
   'settings.language': '界面语言',
 
   // Save
+  'settings.loading': '正在加载设置…',
+  'settings.loadFailed': '设置加载失败。为防止覆盖现有配置，保存功能已停用。',
   'settings.saving': '保存中…',
   'settings.saveSettings': '保存设置',
+  'settings.saveSuccess': '设置已保存',
+  'settings.saveFailed': '设置保存失败，请重试',
 
   // ── Import Dialog ───────────────────────────────────
   'import.title': '导入文献',
@@ -166,6 +196,7 @@ export default {
   'import.fileReadFailed': '文件读取失败',
   'import.sseDisconnected': 'SSE 连接断开',
   'import.literatureFile': '文献文件',
+  'import.fileFilterName': '文献文件',
 
   // ── Library Dialog ──────────────────────────────────
   'library.title': '文献库管理',
@@ -180,6 +211,7 @@ export default {
   'library.removeFromProject': '从项目移除',
   'library.removing': '移除中…',
   'library.removeTooltip': '从项目移除（保留在文献库）',
+  'library.removeFromProjectTooltip': '从当前项目移除（文献仍保留在文献库中）',
   'library.deleteFromLibrary': '从文献库删除',
   'library.confirmDelete': '确认删除',
   'library.usedByProjects': '被 {projects} 使用中',
@@ -194,6 +226,7 @@ export default {
   'library.removeFailed': '移除失败',
   'library.deletedFromLibrary': '已从文献库删除「{filename}」',
   'library.deleteFailed': '删除失败',
+  'library.tenThousand': '万',
 
   // ── Record Detail Dialog ────────────────────────────
   'detail.newspaper': '报纸',
@@ -201,12 +234,14 @@ export default {
   'detail.paper': '论文',
   'detail.interview': '访谈',
   'detail.document': '文献',
+  'detail.literature': '文献',
   'detail.year': '{year}年',
   'detail.page': '第 {page} 页',
   'detail.relevanceScore': '相关度 {score}',
   'detail.copyOriginal': '复制原文',
   'detail.copied': '已复制',
   'detail.createNote': '创建笔记',
+  'detail.loadFullFailed': '完整原文加载失败，当前仅显示预览。请重试后再复制或创建笔记。',
 
   // ── Search Header ───────────────────────────────────
   'search.placeholder': '例如：大跃进期间的粮食产量与征购…',
@@ -248,7 +283,13 @@ export default {
   'extraction.copy': '复制',
   'extraction.sourcesTitle': '所据文献 · {count} 条',
   'extraction.viewOriginal': '查看原文 ',
-
+  'extraction.viewFullOriginal': '查看完整原文',
+  'extraction.resultCount': '{count} 条摘录',
+  'extraction.unknownCitation': 'AI 未提供出处信息',
+  'extraction.sourceMatched': '已定位原文',
+  'extraction.sourceUnmatched': '未定位来源',
+  'extraction.unmatchedHint': '无法可靠定位到原文记录',
+  'extraction.contextTruncated': '文献内容已达到 AI 上下文上限；以下摘录仅基于实际送入模型的记录。',
   // ── Chat Panel ──────────────────────────────────────
   'chat.title': '继续追问',
   'chat.quoteExtraction': '引用摘录',
@@ -306,6 +347,8 @@ export default {
   'notes.newNoteBtn': '新建笔记',
   'notes.autoSaved': '已自动保存',
   'notes.saveFailed': '笔记保存失败',
+  'notes.loadFailed': '笔记加载失败',
+  'notes.createFailed': '新建笔记失败',
   'notes.deleted': '笔记已删除',
   'notes.deleteFailed': '删除失败',
   'notes.defaultTitle': '新笔记',

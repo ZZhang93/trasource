@@ -5,6 +5,27 @@
  */
 
 const BASE_URL = 'http://127.0.0.1:8765'
+const AUTH_HEADER = 'X-Trasource-Token'
+let backendAuthToken = ''
+
+export function setBackendAuthToken(token: string | null | undefined) {
+  backendAuthToken = (token || '').trim()
+}
+
+export function getBackendAuthHeaders(): Record<string, string> {
+  return backendAuthToken ? { [AUTH_HEADER]: backendAuthToken } : {}
+}
+
+/** Fetch a backend URL while consistently attaching the in-memory bearer token. */
+export function backendFetch(pathOrUrl: string, init: RequestInit = {}) {
+  const url = new URL(pathOrUrl, `${BASE_URL}/`)
+  if (url.origin !== new URL(BASE_URL).origin) {
+    throw new Error('backendFetch only accepts local backend URLs')
+  }
+  const headers = new Headers(init.headers)
+  if (backendAuthToken) headers.set(AUTH_HEADER, backendAuthToken)
+  return fetch(url.toString(), { ...init, headers })
+}
 
 class ApiClient {
   private base: string
@@ -28,7 +49,7 @@ class ApiClient {
     if (body !== undefined) {
       opts.body = JSON.stringify(body)
     }
-    const res = await fetch(url, opts)
+    const res = await backendFetch(url, opts)
     if (!res.ok) {
       const err = await res.text()
       throw new Error(`API ${method} ${path} failed (${res.status}): ${err}`)
@@ -36,35 +57,24 @@ class ApiClient {
     return res.json()
   }
 
-  get<T = unknown>(path: string) {
-    return this.request<T>('GET', path)
+  get<T = unknown>(path: string, signal?: AbortSignal) {
+    return this.request<T>('GET', path, undefined, signal)
   }
 
   post<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) {
     return this.request<T>('POST', path, body, signal)
   }
 
-  put<T = unknown>(path: string, body?: unknown) {
-    return this.request<T>('PUT', path, body)
+  put<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) {
+    return this.request<T>('PUT', path, body, signal)
   }
 
-  delete<T = unknown>(path: string) {
-    return this.request<T>('DELETE', path)
+  delete<T = unknown>(path: string, signal?: AbortSignal) {
+    return this.request<T>('DELETE', path, undefined, signal)
   }
 
-  patch<T = unknown>(path: string, body?: unknown) {
-    return this.request<T>('PATCH', path, body)
-  }
-
-  /**
-   * SSE 流式接口：返回 EventSource
-   * 用法：
-   *   const es = api.stream('/api/search/extract?query=...')
-   *   es.onmessage = (e) => { const d = JSON.parse(e.data); ... }
-   *   es.onerror   = (e) => { es.close() }
-   */
-  stream(path: string): EventSource {
-    return new EventSource(`${this.base}${path}`)
+  patch<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) {
+    return this.request<T>('PATCH', path, body, signal)
   }
 
   /**
@@ -77,7 +87,7 @@ class ApiClient {
     body: unknown,
     signal?: AbortSignal,
   ): AsyncGenerator<{ text?: string; done?: boolean; error?: string; stale?: boolean; model?: string }> {
-    const res = await fetch(`${this.base}${path}`, {
+    const res = await backendFetch(`${this.base}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
