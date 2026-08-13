@@ -24,7 +24,7 @@ export default {
   'startup.stageReconnecting': '尝试重新连接 · 第 {attempt} 次',
   'startup.elapsed': '已等待 {seconds} 秒',
   'startup.failedTitle': '本地服务未能启动',
-  'startup.failedHint': '请确认没有其他程序占用服务端口，然后重试；若问题持续，请重启应用。',
+  'startup.failedHint': '启动失败不一定由端口占用引起。请重新尝试；若问题持续，请安装最新版本或查看应用日志。',
   'startup.retry': '重新尝试',
   'startup.localNote': '所有文献与设置均保存在本机',
 

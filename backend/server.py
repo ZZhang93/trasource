@@ -91,7 +91,7 @@ AUTH_HEADER = "X-Trasource-Token"
 # ────────────────────────────────────────────────
 app = FastAPI(
     title="史料检索引擎 API",
-    version="1.4.0",
+    version="1.4.1",
     docs_url="/docs",
 )
 
@@ -165,7 +165,7 @@ app.include_router(history_router)
 async def health():
     return {
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.4.1",
         # A successful authenticated response already proves ownership. Never
         # echo the bearer secret back over HTTP.
         "instance_authenticated": bool(INSTANCE_TOKEN),

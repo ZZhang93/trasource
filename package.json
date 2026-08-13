@@ -1,7 +1,7 @@
 {
   "name": "trasource",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "license": "AGPL-3.0-only",
   "repository": "https://github.com/ZZhang93/trasource",
   "engines": {
@@ -20,7 +20,7 @@
     "prepare:sidecar:dev": "node scripts/prepare-sidecar.mjs --placeholder",
     "build:sidecar": "node scripts/prepare-sidecar.mjs --build",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:build": "node scripts/run-desktop-build.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

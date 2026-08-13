@@ -24,7 +24,7 @@ export default {
   'startup.stageReconnecting': 'Reconnecting · attempt {attempt}',
   'startup.elapsed': 'Waiting {seconds}s',
   'startup.failedTitle': 'Local Service Could Not Start',
-  'startup.failedHint': 'Check that no other program is using the service port, then retry. Restart the app if the problem continues.',
+  'startup.failedHint': 'Startup failures are not always caused by a busy port. Try again; if the problem continues, install the latest version or inspect the app logs.',
   'startup.retry': 'Try Again',
   'startup.localNote': 'Documents and settings stay on this device',
 

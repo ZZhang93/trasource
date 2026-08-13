@@ -2,7 +2,18 @@
 # PyInstaller 配置：将 FastAPI 后端打包为 Tauri sidecar 单文件二进制
 # 用法: python -m PyInstaller trasource-backend.spec --clean --noconfirm
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+
+# A real Developer ID must sign both the binaries embedded by PyInstaller and
+# the outer sidecar that Tauri signs later.  For local ad-hoc builds (unset or
+# "-"), PyInstaller performs its normal ad-hoc signing and the desktop build
+# wrapper disables hardened runtime to avoid macOS library-validation failures.
+apple_signing_identity = (os.environ.get('APPLE_SIGNING_IDENTITY') or '').strip()
+if apple_signing_identity == '-':
+    apple_signing_identity = None
 
 # jieba 需要词典数据文件
 datas = collect_data_files('jieba')
@@ -50,6 +61,6 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity=apple_signing_identity,
     entitlements_file=None,
 )

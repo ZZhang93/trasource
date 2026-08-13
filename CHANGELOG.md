@@ -5,6 +5,18 @@ versioning; release dates use ISO 8601.
 
 ## Unreleased
 
+## 1.4.1 - 2026-08-13
+
+### Fixed
+
+- macOS ad-hoc builds no longer enable hardened runtime on the PyInstaller
+  sidecar, preventing library validation from rejecting the embedded Python
+  runtime before the backend can bind its service port.
+- Developer ID builds now pass the same signing identity to PyInstaller and
+  Tauri, while automatically restoring hardened runtime for distribution.
+- The startup failure message no longer incorrectly assumes every backend
+  launch failure is caused by another process occupying port 8765.
+
 ## 1.4.0 - 2026-08-12
 
 ### Added

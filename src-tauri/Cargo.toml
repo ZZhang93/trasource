@@ -1,6 +1,6 @@
 [package]
 name = "trasource"
-version = "1.4.0"
+version = "1.4.1"
 description = "问渠 · trasource — 历史文献 AI 检索引擎"
 authors = ["patrick"]
 license = "AGPL-3.0-only"

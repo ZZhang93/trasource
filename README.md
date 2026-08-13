@@ -118,6 +118,8 @@ APPLE_SIGNING_IDENTITY=- npm run desktop:build
 
 # For a public macOS release, set APPLE_SIGNING_IDENTITY to a Developer ID
 # Application identity and configure Apple notarization credentials instead.
+# Always use this npm script: it keeps PyInstaller and Tauri on the same
+# signing identity and selects the matching hardened-runtime policy.
 
 # Output: src-tauri/target/release/bundle/
 ```
